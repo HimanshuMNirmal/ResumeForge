@@ -3,6 +3,13 @@ name: Deploy — Build & Push to ECR, Deploy to EC2
 on:
   push:
     branches: [main]
+    paths:
+      - 'backend/**'
+      - 'src/**'
+      - 'Dockerfile*'
+      - 'docker-compose*'
+      - '.github/workflows/deploy.yml'
+  workflow_dispatch:
 
 concurrency:
   group: deploy-production

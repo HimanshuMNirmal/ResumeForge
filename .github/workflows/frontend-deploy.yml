@@ -1,0 +1,107 @@
+name: Deploy Frontend — Vercel
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'resume-web/**'
+      - '.github/workflows/frontend-deploy.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'resume-web/**'
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-frontend-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: Build & Deploy to Vercel
+    runs-on: ubuntu-latest
+    env:
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Validate Vercel Secrets
+        run: |
+          missing=0
+          if [ -z "$VERCEL_TOKEN" ]; then
+            echo "::error::Missing secret: VERCEL_TOKEN"
+            missing=1
+          fi
+          if [ -z "$VERCEL_ORG_ID" ]; then
+            echo "::error::Missing secret: VERCEL_ORG_ID"
+            missing=1
+          fi
+          if [ -z "$VERCEL_PROJECT_ID" ]; then
+            echo "::error::Missing secret: VERCEL_PROJECT_ID"
+            missing=1
+          fi
+          if [ $missing -eq 1 ]; then
+            echo "Please configure VERCEL_TOKEN, VERCEL_ORG_ID, and VERCEL_PROJECT_ID in your GitHub repository Secrets."
+            exit 1
+          fi
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Dependencies
+        working-directory: ./resume-web
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm install
+          fi
+
+      - name: Install Vercel CLI
+        run: npm install --global vercel@latest
+
+      # --- PREVIEW DEPLOYMENT (PULL REQUESTS) ---
+      - name: Pull Vercel Environment (Preview)
+        if: github.event_name == 'pull_request'
+        working-directory: ./resume-web
+        run: vercel pull --yes --environment=preview --token=$VERCEL_TOKEN
+
+      - name: Build Project Artifacts (Preview)
+        if: github.event_name == 'pull_request'
+        working-directory: ./resume-web
+        run: vercel build --token=$VERCEL_TOKEN
+
+      - name: Deploy Project to Vercel (Preview)
+        if: github.event_name == 'pull_request'
+        id: deploy-preview
+        working-directory: ./resume-web
+        run: |
+          URL=$(vercel deploy --prebuilt --token=$VERCEL_TOKEN)
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+          echo "🚀 Vercel Preview URL: $URL"
+
+      # --- PRODUCTION DEPLOYMENT (MAIN BRANCH) ---
+      - name: Pull Vercel Environment (Production)
+        if: github.event_name != 'pull_request'
+        working-directory: ./resume-web
+        run: vercel pull --yes --environment=production --token=$VERCEL_TOKEN
+
+      - name: Build Project Artifacts (Production)
+        if: github.event_name != 'pull_request'
+        working-directory: ./resume-web
+        run: vercel build --prod --token=$VERCEL_TOKEN
+
+      - name: Deploy Project to Vercel (Production)
+        if: github.event_name != 'pull_request'
+        id: deploy-prod
+        working-directory: ./resume-web
+        run: |
+          URL=$(vercel deploy --prebuilt --prod --token=$VERCEL_TOKEN)
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+          echo "🚀 Vercel Production URL: $URL"
