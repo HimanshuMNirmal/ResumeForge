@@ -37,7 +37,6 @@ function RegisterForm() {
       router.push(redirectUrl);
     } catch (err: any) {
       setError(err);
-      toast.error(err.message || "Registration failed. Please try again.");
     } finally {
       setLoading(false);
     }

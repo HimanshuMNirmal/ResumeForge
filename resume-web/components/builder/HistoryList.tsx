@@ -8,7 +8,13 @@ import { cn } from "@/lib/utils";
 export function HistoryList() {
   const { data, isLoading, error } = useQuery({ queryKey: ["history"], queryFn: api.resume.history });
   if (isLoading) return <div className="space-y-2">{[0, 1, 2].map((i) => <div key={i} className="h-14 animate-pulse rounded-lg border border-zinc-200 bg-white" />)}</div>;
-  if (error) return <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">Couldn't load history: {error.message}</p>;
+  if (error) {
+    return (
+      <div className="rounded-lg border border-dashed border-zinc-200 p-8 text-center text-sm text-zinc-500">
+        Couldn't load resume history. Please refresh the page.
+      </div>
+    );
+  }
   if (!data?.length) return (
     <div className="rounded-lg border border-dashed border-zinc-300 p-10 text-center text-sm text-zinc-500">
       No resumes yet. <Link href="/builder" className="font-medium text-zinc-900 underline">Generate your first one</Link>.

@@ -26,8 +26,13 @@ function AddKeyModal({ onClose }: { onClose: () => void }) {
 
   const add = useMutation({
     mutationFn: api.keys.add,
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["keys"] }); qc.invalidateQueries({ queryKey: ["models"] }); toast.success("Key added"); onClose(); },
-    onError: (e) => toast.error(e.message),
+    meta: { suppressGlobalError: true },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["keys"] });
+      qc.invalidateQueries({ queryKey: ["models"] });
+      toast.success("Key added");
+      onClose();
+    },
   });
 
   return (
@@ -77,8 +82,14 @@ export function KeyManager() {
   const [adding, setAdding] = useState(false);
   const { data: keys, isLoading, error } = useQuery({ queryKey: ["keys"], queryFn: api.keys.list });
   const refresh = () => { qc.invalidateQueries({ queryKey: ["keys"] }); qc.invalidateQueries({ queryKey: ["models"] }); };
-  const toggle = useMutation({ mutationFn: api.keys.toggle, onSuccess: refresh, onError: (e) => toast.error(e.message) });
-  const remove = useMutation({ mutationFn: api.keys.remove, onSuccess: () => { refresh(); toast.success("Key deleted"); }, onError: (e) => toast.error(e.message) });
+  const toggle = useMutation({ mutationFn: api.keys.toggle, onSuccess: refresh });
+  const remove = useMutation({
+    mutationFn: api.keys.remove,
+    onSuccess: () => {
+      refresh();
+      toast.success("Key deleted");
+    },
+  });
 
   return (
     <div className="grid gap-6 lg:grid-cols-[1fr_20rem]">
@@ -88,7 +99,7 @@ export function KeyManager() {
           <button onClick={() => setAdding(true)} className="inline-flex items-center gap-1.5 rounded-md bg-zinc-900 px-2.5 py-1.5 text-xs text-white hover:bg-zinc-800"><Plus className="size-3.5" />Add key</button>
         </header>
         {isLoading && <div className="m-4 h-16 animate-pulse rounded bg-zinc-100" />}
-        {error && <p role="alert" className="p-4 text-sm text-red-700">Couldn't load keys: {error.message}</p>}
+        {error && <p role="alert" className="p-4 text-sm text-zinc-500">Couldn't load keys. Please refresh.</p>}
         {keys?.length === 0 && <p className="p-8 text-center text-sm text-zinc-500">No keys yet. Add one to choose your own model, or skip it and use the platform models.</p>}
         <ul className="divide-y divide-zinc-100">
           {keys?.map((k) => {

@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
-import { api, getStoredToken } from "@/lib/api-client";
+import { api, getStoredToken, setStoredToken } from "@/lib/api-client";
 import type { LoginRequest, RegisterRequest, User } from "@/types/api";
 
 interface AuthContextType {
@@ -41,6 +41,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           const refreshedUser = await api.auth.me();
           if (isMounted) setUser(refreshedUser);
         } catch {
+          setStoredToken(null);
           if (isMounted) setUser(null);
         }
       } finally {
@@ -76,8 +77,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch {
       // ignore
     } finally {
+      setStoredToken(null);
       setUser(null);
-      router.push("/login");
+      router.push("/");
     }
   };
 

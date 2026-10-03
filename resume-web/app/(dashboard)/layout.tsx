@@ -21,9 +21,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
-      router.push(`/login?redirect=${encodeURIComponent(path)}`);
+      router.push("/");
     }
-  }, [isLoading, isAuthenticated, path, router]);
+  }, [isLoading, isAuthenticated, router]);
 
   if (isLoading) {
     return (

@@ -62,14 +62,18 @@ def create_app() -> FastAPI:
     async def health():
         return {"status": "ok", "version": settings.APP_VERSION}
 
-    # ── Global exception handler ──────────────────────────────────────────────
-    @app.exception_handler(Exception)
-    async def unhandled_exception_handler(request: Request, exc: Exception):
-        logger.exception("Unhandled exception: %s %s", request.method, request.url)
-        return JSONResponse(
-            status_code=500,
-            content={"detail": "Internal server error", "code": "INTERNAL_ERROR"},
-        )
+    # ── Global exception handlers ─────────────────────────────────────────────
+    from fastapi.exceptions import RequestValidationError
+    from fastapi import HTTPException
+    from .errors import (
+        http_exception_handler,
+        unhandled_exception_handler,
+        validation_exception_handler,
+    )
+
+    app.add_exception_handler(RequestValidationError, validation_exception_handler)
+    app.add_exception_handler(HTTPException, http_exception_handler)
+    app.add_exception_handler(Exception, unhandled_exception_handler)
 
     return app
 

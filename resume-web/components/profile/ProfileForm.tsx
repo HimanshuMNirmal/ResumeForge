@@ -6,7 +6,6 @@ import { Loader2, Plus, Trash2 } from "lucide-react";
 import { api, ApiError } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 import type { Experience, Profile, Skills } from "@/types/api";
-import { ErrorAlert } from "@/components/ui/ErrorAlert";
 
 const EMPTY: Profile = {
   full_name: "", email: "", phone: "", location: "", linkedin: "", github: "", portfolio: "",
@@ -99,15 +98,23 @@ export function ProfileForm() {
 
   const save = useMutation({
     mutationFn: api.profile.update,
-    onSuccess: (p) => { qc.setQueryData(["profile"], p); toast.success("Profile saved"); },
-    onError: (e) => toast.error(e.message),
+    onSuccess: (p) => {
+      qc.setQueryData(["profile"], p);
+      toast.success("Profile saved");
+    },
   });
 
   const update = (fn: (p: Profile) => void) => setDraft((p) => { const n = structuredClone(p); fn(n); return n; });
   const setExp = (i: number, fn: (e: Experience) => void) => update((p) => fn(p.experience[i]));
 
   if (isLoading) return <div className="h-64 animate-pulse rounded-lg border border-zinc-200 bg-white" aria-label="Loading profile" />;
-  if (error) return <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">Couldn't load your profile: {error.message}</p>;
+  if (error) {
+    return (
+      <div className="rounded-lg border border-dashed border-zinc-200 p-8 text-center text-sm text-zinc-500">
+        Couldn't load your profile. Please refresh the page.
+      </div>
+    );
+  }
 
   return (
     <section className="rounded-lg border border-zinc-200 bg-white">
@@ -117,12 +124,6 @@ export function ProfileForm() {
             className={cn("-mb-px border-b-2 px-3 py-2 text-sm", tab === t ? "border-zinc-900 font-medium" : "border-transparent text-zinc-500 hover:text-zinc-900")}>{t}</button>
         ))}
       </div>
-
-      {save.isError && (
-        <div className="p-4 pb-0">
-          <ErrorAlert error={save.error} title="Validation error saving profile" />
-        </div>
-      )}
 
       <div className="space-y-4 p-4">
         {tab === "Personal" && (

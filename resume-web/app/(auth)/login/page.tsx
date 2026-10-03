@@ -30,7 +30,6 @@ function LoginForm() {
       router.push(redirectUrl);
     } catch (err: any) {
       setError(err);
-      toast.error(err.message || "Invalid email or password");
     } finally {
       setLoading(false);
     }

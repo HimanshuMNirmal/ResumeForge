@@ -37,6 +37,11 @@ export const setTokenProvider = (fn: TokenProvider) => {
   tokenProvider = fn;
 };
 
+export interface ErrorDetail {
+  field?: string;
+  message: string;
+}
+
 export class ApiError extends Error {
   public errors: string[];
   public fieldErrors: Record<string, string>;
@@ -44,21 +49,40 @@ export class ApiError extends Error {
   constructor(
     public status: number,
     message: string,
-    public body?: unknown,
-    errors: string[] = [],
-    fieldErrors: Record<string, string> = {}
+    public code: string = "ERROR",
+    public details: ErrorDetail[] = [],
+    public body?: unknown
   ) {
     super(message);
     this.name = "ApiError";
-    this.errors = errors;
-    this.fieldErrors = fieldErrors;
+    this.errors = details.map((d) => (d.field ? `${d.field}: ${d.message}` : d.message));
+    if (this.errors.length === 0 && message) {
+      this.errors = [message];
+    }
+    this.fieldErrors = {};
+    for (const d of details) {
+      if (d.field) {
+        this.fieldErrors[d.field] = d.message;
+      }
+    }
+  }
+
+  get isSessionExpired(): boolean {
+    return this.status === 401;
   }
 }
 
 export class ImportValidationError extends ApiError {
-  constructor(message: string, errors: string[], fieldErrors: Record<string, string> = {}) {
-    super(422, message, undefined, errors, fieldErrors);
+  constructor(message: string, errors: string[] = [], fieldErrors: Record<string, string> = {}) {
+    const details: ErrorDetail[] = errors.map((e) => {
+      const parts = e.split(":", 1);
+      return parts.length > 1
+        ? { field: parts[0].trim(), message: e.slice(parts[0].length + 1).trim() }
+        : { message: e };
+    });
+    super(422, message, "VALIDATION_ERROR", details);
     this.name = "ImportValidationError";
+    this.fieldErrors = fieldErrors;
   }
 }
 
@@ -70,79 +94,82 @@ async function toError(res: Response): Promise<ApiError> {
     /* non-JSON body */
   }
 
-  const fieldErrors: Record<string, string> = {};
-  const errorList: string[] = [];
+  // 1. Direct match with standard backend envelope: { success: false, error: { code, message, status, details } }
+  if (body?.error && typeof body.error === "object") {
+    const code = body.error.code || (res.status === 422 ? "VALIDATION_ERROR" : "ERROR");
+    const message = body.error.message || res.statusText || "Request failed";
+    const rawDetails = Array.isArray(body.error.details) ? body.error.details : [];
+    const details: ErrorDetail[] = rawDetails.map((d: any) => ({
+      field: d.field || undefined,
+      message: d.message || String(d),
+    }));
+    return new ApiError(res.status, message, code, details, body);
+  }
 
-  // 1. Extract from body.errors (array of strings or objects)
+  // 2. Fallbacks for legacy/unstandardized payloads
+  const details: ErrorDetail[] = [];
+  let mainMsg = "";
+
   if (Array.isArray(body?.errors)) {
     for (const item of body.errors) {
       if (typeof item === "string") {
-        errorList.push(item);
+        details.push({ message: item });
       } else if (item && typeof item === "object") {
-        const msg = item.msg || item.message || JSON.stringify(item);
-        const loc = Array.isArray(item.loc) ? item.loc.filter((x: any) => x !== "body").join(".") : "";
-        errorList.push(loc ? `${loc}: ${msg}` : msg);
-        if (loc) fieldErrors[loc] = msg;
+        details.push({ field: item.field || undefined, message: item.msg || item.message || JSON.stringify(item) });
       }
     }
   }
 
-  // 2. Extract from body.detail.errors (e.g. custom validator with { message, errors: [...] })
   if (Array.isArray(body?.detail?.errors)) {
     for (const item of body.detail.errors) {
-      errorList.push(String(item));
-      const parts = String(item).split(":");
-      if (parts.length > 1) {
-        fieldErrors[parts[0].trim()] = parts.slice(1).join(":").trim();
-      }
+      const parts = String(item).split(":", 1);
+      details.push(parts.length > 1 ? { field: parts[0].trim(), message: String(item).slice(parts[0].length + 1).trim() } : { message: String(item) });
     }
-  }
-
-  // 3. Extract from FastAPI default 422 validation array (body.detail: [{loc: [...], msg: "..."}])
-  if (Array.isArray(body?.detail)) {
+    if (typeof body.detail.message === "string") {
+      mainMsg = body.detail.message;
+    }
+  } else if (Array.isArray(body?.detail)) {
     for (const d of body.detail) {
-      const locParts = Array.isArray(d.loc)
-        ? d.loc.filter((x: any) => x !== "body")
-        : [];
-      const field = locParts.join(".");
-      const msg = d.msg || "Invalid value";
-      const formatted = field ? `${field}: ${msg}` : msg;
-      errorList.push(formatted);
-      if (field) fieldErrors[field] = msg;
+      const loc = Array.isArray(d.loc) ? d.loc.filter((x: any) => x !== "body").join(".") : "";
+      details.push({ field: loc || undefined, message: d.msg || "Invalid value" });
     }
-  }
-
-  // 4. Extract base message
-  let mainMsg = "";
-  if (typeof body?.detail === "string") {
+  } else if (typeof body?.detail === "string") {
     mainMsg = body.detail;
-  } else if (typeof body?.detail?.message === "string") {
-    mainMsg = body.detail.message;
   } else if (typeof body?.message === "string") {
     mainMsg = body.message;
   }
 
-  // Build the unified human-readable message
-  let finalMessage = "";
-  if (mainMsg && errorList.length > 0) {
-    // If mainMsg already contains the error, don't duplicate
-    if (errorList.some((e) => mainMsg.includes(e))) {
-      finalMessage = mainMsg;
-    } else {
-      finalMessage = `${mainMsg} (${errorList.join("; ")})`;
-    }
-  } else if (errorList.length > 0) {
-    finalMessage = errorList.join("; ");
-  } else if (mainMsg) {
-    finalMessage = mainMsg;
-  } else {
-    finalMessage = res.statusText || "Request failed";
-  }
+  const code = res.status === 422 ? "VALIDATION_ERROR" : res.status === 401 ? "UNAUTHORIZED" : "ERROR";
+  const formattedSummary = details.map((d) => (d.field ? `${d.field}: ${d.message}` : d.message)).join("; ");
+  const finalMsg = mainMsg
+    ? (formattedSummary && !mainMsg.includes(formattedSummary) ? `${mainMsg} (${formattedSummary})` : mainMsg)
+    : (formattedSummary || res.statusText || "Request failed");
 
-  if (res.status === 422 || errorList.length > 0) {
-    return new ImportValidationError(finalMessage, errorList, fieldErrors);
+  return new ApiError(res.status, finalMsg, code, details, body);
+}
+
+let isRedirecting = false;
+
+export function handleSessionExpired(customMsg?: string) {
+  if (isRedirecting) return;
+  isRedirecting = true;
+  setStoredToken(null);
+
+  if (typeof window !== "undefined") {
+    import("sonner")
+      .then(({ toast }) => {
+        toast.error(customMsg || "Your session has expired. Please sign in again.");
+      })
+      .catch(() => {});
+
+    // Redirect to landing page
+    setTimeout(() => {
+      window.location.href = "/";
+      setTimeout(() => {
+        isRedirecting = false;
+      }, 3000);
+    }, 400);
   }
-  return new ApiError(res.status, finalMessage, body, errorList, fieldErrors);
 }
 
 async function request(path: string, init: RequestInit = {}): Promise<Response> {
@@ -163,6 +190,42 @@ async function request(path: string, init: RequestInit = {}): Promise<Response> 
   } catch {
     throw new ApiError(0, "Can't reach the server. Check your connection and try again.");
   }
+
+  // Handle 401 Unauthorized (Expired or invalid token)
+  if (
+    res.status === 401 &&
+    !path.startsWith("/api/v1/auth/login") &&
+    !path.startsWith("/api/v1/auth/register")
+  ) {
+    // Try to refresh token once if this is not already a refresh attempt
+    if (path !== "/api/v1/auth/refresh") {
+      try {
+        const refreshRes = await fetch(`${BASE}/api/v1/auth/refresh`, {
+          method: "POST",
+          credentials: "include",
+        });
+        if (refreshRes.ok) {
+          const refreshData = await refreshRes.json();
+          if (refreshData?.access_token) {
+            setStoredToken(refreshData.access_token);
+            headers.set("Authorization", `Bearer ${refreshData.access_token}`);
+            const retryRes = await fetch(`${BASE}${path}`, {
+              ...init,
+              headers,
+              credentials: "include",
+            });
+            if (retryRes.ok) return retryRes;
+          }
+        }
+      } catch {
+        /* token refresh failed */
+      }
+    }
+
+    // Refresh failed or invalid session: redirect to landing page with message
+    handleSessionExpired("Your session has expired. Please sign in again.");
+  }
+
   if (!res.ok) throw await toError(res);
   return res;
 }

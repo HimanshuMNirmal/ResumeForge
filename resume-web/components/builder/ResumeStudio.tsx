@@ -8,7 +8,6 @@ import { Check, Copy, FileDown, Loader2, WandSparkles } from "lucide-react";
 import { api } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 import type { ResumeResult } from "@/types/api";
-import { ErrorAlert } from "@/components/ui/ErrorAlert";
 
 const TABS = ["Preview", "ATS match", "Markdown"] as const;
 const field = "w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm focus:border-zinc-900 focus:outline-none";
@@ -44,8 +43,11 @@ export function ResumeStudio() {
 
   const gen = useMutation({
     mutationFn: api.resume.generate,
-    onSuccess: (r) => { setResult(r); setMd(r.markdown); setTab("Preview"); },
-    onError: (e) => toast.error(e.message),
+    onSuccess: (r) => {
+      setResult(r);
+      setMd(r.markdown);
+      setTab("Preview");
+    },
   });
   const canRun = jd.trim().length >= 80 && !!chosenModel && !gen.isPending;
 
@@ -94,9 +96,6 @@ export function ResumeStudio() {
           <span className="text-xs font-medium text-zinc-600">Extra instructions (optional)</span>
           <textarea rows={2} className={field} value={extra} onChange={(e) => setExtra(e.target.value)} placeholder="e.g. Keep it to one page" />
         </label>
-        {gen.isError && (
-          <ErrorAlert error={gen.error} title="Generation failed" />
-        )}
         <button disabled={!canRun} onClick={run} className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-zinc-900 px-3 py-2 text-sm text-white hover:bg-zinc-800 disabled:opacity-40">
           {gen.isPending ? <Loader2 className="size-4 animate-spin" /> : <WandSparkles className="size-4" />}{gen.isPending ? "Tailoring…" : "Generate resume"}
         </button>

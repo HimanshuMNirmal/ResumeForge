@@ -18,6 +18,7 @@ export function ImportExportPanel() {
 
   const importer = useMutation({
     mutationFn: api.profile.import,
+    meta: { suppressGlobalError: true },
     onMutate: () => { setState("validating"); setErrors([]); },
     onSuccess: (r) => {
       qc.setQueryData(["profile"], r.profile);
@@ -35,7 +36,6 @@ export function ImportExportPanel() {
         setErrors([]);
         setMessage(e.message);
       }
-      toast.error(e.message);
     },
   });
 
