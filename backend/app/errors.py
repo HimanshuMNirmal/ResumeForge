@@ -46,6 +46,8 @@ def build_error_response(
     code: str,
     message: str,
     details: Optional[list[ErrorDetail]] = None,
+    headers: Optional[dict[str, str]] = None,
+    request: Optional[Request] = None,
 ) -> JSONResponse:
     details_list = details or []
     content = {
@@ -58,7 +60,17 @@ def build_error_response(
         },
         "detail": message,
     }
-    return JSONResponse(status_code=status_code, content=content)
+    resp_headers = headers.copy() if headers else {}
+    if request:
+        origin = request.headers.get("origin")
+        if origin:
+            resp_headers["Access-Control-Allow-Origin"] = origin
+            resp_headers["Access-Control-Allow-Credentials"] = "true"
+            resp_headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, PATCH, DELETE, OPTIONS"
+            resp_headers["Access-Control-Allow-Headers"] = "*"
+        else:
+            resp_headers["Access-Control-Allow-Origin"] = "*"
+    return JSONResponse(status_code=status_code, content=content, headers=resp_headers)
 
 
 async def validation_exception_handler(
@@ -87,6 +99,7 @@ async def validation_exception_handler(
         code="VALIDATION_ERROR",
         message=summary_message,
         details=details,
+        request=request,
     )
 
 
@@ -117,16 +130,14 @@ async def http_exception_handler(
         message = str(exc.detail) if exc.detail else "Request failed"
 
     headers = getattr(exc, "headers", None)
-    response = build_error_response(
+    return build_error_response(
         status_code=exc.status_code,
         code=code,
         message=message,
         details=details,
+        headers=headers,
+        request=request,
     )
-    if headers:
-        for k, v in headers.items():
-            response.headers[k] = v
-    return response
 
 
 async def unhandled_exception_handler(
@@ -138,4 +149,5 @@ async def unhandled_exception_handler(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         code="INTERNAL_ERROR",
         message="An unexpected server error occurred. Please try again.",
+        request=request,
     )
