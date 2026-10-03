@@ -33,13 +33,182 @@ from .service import (
 router = APIRouter(prefix="/profile", tags=["profile"])
 
 
-@router.get("", response_model=ProfileOut)
+def _format_profile_for_frontend(profile: Profile) -> dict:
+    links = profile.links or []
+    linkedin = ""
+    github = ""
+    portfolio = ""
+    for lnk in links:
+        if isinstance(lnk, dict):
+            lbl = lnk.get("label", "").lower()
+            url = lnk.get("url", "")
+            if "linkedin" in lbl:
+                linkedin = url
+            elif "github" in lbl:
+                github = url
+            elif "portfolio" in lbl:
+                portfolio = url
+
+    skills_dict = {"languages": [], "frameworks": [], "tools": [], "soft": []}
+    if isinstance(profile.skills, dict):
+        for k in skills_dict:
+            skills_dict[k] = profile.skills.get(k, [])
+    elif isinstance(profile.skills, list):
+        for s in profile.skills:
+            if isinstance(s, dict):
+                cat = (s.get("category") or "tools").lower()
+                name = s.get("name", "")
+                if "language" in cat:
+                    skills_dict["languages"].append(name)
+                elif "framework" in cat:
+                    skills_dict["frameworks"].append(name)
+                elif "soft" in cat:
+                    skills_dict["soft"].append(name)
+                else:
+                    skills_dict["tools"].append(name)
+
+    experience = []
+    if isinstance(profile.experience, list):
+        for exp in profile.experience:
+            if isinstance(exp, dict):
+                experience.append({
+                    "company": exp.get("company", ""),
+                    "role": exp.get("role") or exp.get("title", ""),
+                    "start_date": exp.get("start_date") or exp.get("start", ""),
+                    "end_date": exp.get("end_date") or exp.get("end", None),
+                    "bullets": [
+                        {
+                            "text": b.get("text", "") if isinstance(b, dict) else str(b),
+                            "skills": b.get("skills", []) if isinstance(b, dict) else [],
+                        }
+                        for b in exp.get("bullets", [])
+                    ],
+                })
+
+    education = []
+    if isinstance(profile.education, list):
+        for ed in profile.education:
+            if isinstance(ed, dict):
+                education.append({
+                    "institution": ed.get("institution", ""),
+                    "degree": ed.get("degree", ""),
+                    "field": ed.get("field") or (ed.get("details", [""])[0] if ed.get("details") else ""),
+                    "start_date": ed.get("start_date") or ed.get("start", ""),
+                    "end_date": ed.get("end_date") or ed.get("end", None),
+                })
+
+    certs = []
+    if isinstance(profile.certifications, list):
+        for c in profile.certifications:
+            if isinstance(c, dict):
+                certs.append(c.get("name", ""))
+            else:
+                certs.append(str(c))
+
+    return {
+        "full_name": profile.full_name or "",
+        "email": profile.email or "",
+        "phone": profile.phone or "",
+        "location": profile.location or "",
+        "linkedin": linkedin,
+        "github": github,
+        "portfolio": portfolio,
+        "experience": experience,
+        "education": education,
+        "certifications": certs,
+        "skills": skills_dict,
+    }
+
+
+@router.get("")
 async def get_profile(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     profile = await get_or_create_profile(current_user.id, db)
-    return ProfileOut.model_validate(profile)
+    return _format_profile_for_frontend(profile)
+
+
+@router.put("")
+async def update_profile_full(
+    body: dict,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    profile = await get_or_create_profile(current_user.id, db)
+
+    if "full_name" in body:
+        profile.full_name = body["full_name"]
+    if "email" in body:
+        profile.email = body["email"]
+    if "phone" in body:
+        profile.phone = body["phone"]
+    if "location" in body:
+        profile.location = body["location"]
+
+    links = []
+    if body.get("linkedin"):
+        links.append({"label": "LinkedIn", "url": body["linkedin"]})
+    if body.get("github"):
+        links.append({"label": "GitHub", "url": body["github"]})
+    if body.get("portfolio"):
+        links.append({"label": "Portfolio", "url": body["portfolio"]})
+    if links:
+        profile.links = links
+
+    if "skills" in body:
+        profile.skills = body["skills"]
+
+    if "experience" in body and isinstance(body["experience"], list):
+        exp_list = []
+        for i, exp in enumerate(body["experience"]):
+            if isinstance(exp, dict):
+                exp_list.append({
+                    "id": exp.get("id") or f"exp-{i+1:03d}",
+                    "company": exp.get("company", ""),
+                    "title": exp.get("role") or exp.get("title", ""),
+                    "title_aliases": exp.get("title_aliases", []),
+                    "location": exp.get("location", ""),
+                    "start": exp.get("start_date") or exp.get("start", ""),
+                    "end": exp.get("end_date") or exp.get("end", None),
+                    "bullets": [
+                        {
+                            "id": b.get("id") or f"b-{j+1:03d}",
+                            "text": b.get("text", "") if isinstance(b, dict) else str(b),
+                            "skills": b.get("skills", []) if isinstance(b, dict) else [],
+                            "metrics": b.get("metrics", []) if isinstance(b, dict) else [],
+                            "themes": b.get("themes", []) if isinstance(b, dict) else [],
+                        }
+                        for j, b in enumerate(exp.get("bullets", []))
+                    ],
+                })
+        profile.experience = exp_list
+
+    if "education" in body and isinstance(body["education"], list):
+        ed_list = []
+        for i, ed in enumerate(body["education"]):
+            if isinstance(ed, dict):
+                details = [ed.get("field", "")] if ed.get("field") else ed.get("details", [])
+                ed_list.append({
+                    "id": ed.get("id") or f"edu-{i+1:03d}",
+                    "institution": ed.get("institution", ""),
+                    "degree": ed.get("degree", ""),
+                    "location": ed.get("location", ""),
+                    "start": ed.get("start_date") or ed.get("start", ""),
+                    "end": ed.get("end_date") or ed.get("end", None),
+                    "details": details,
+                })
+        profile.education = ed_list
+
+    if "certifications" in body and isinstance(body["certifications"], list):
+        profile.certifications = [
+            {"id": f"cert-{i+1:03d}", "name": c if isinstance(c, str) else c.get("name", "")}
+            for i, c in enumerate(body["certifications"])
+        ]
+
+    await db.flush()
+    return _format_profile_for_frontend(profile)
+
 
 
 @router.patch("/basics", response_model=ProfileOut)
