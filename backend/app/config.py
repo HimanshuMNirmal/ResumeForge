@@ -43,8 +43,9 @@ class Settings(BaseSettings):
 
     @property
     def encryption_key_bytes(self) -> bytes:
-        """Return the encryption key as raw bytes (decode if base64-encoded)."""
+        """Return the encryption key as raw bytes (decode if base64-encoded, fallback to sha256)."""
         import base64
+        import hashlib
         try:
             decoded = base64.urlsafe_b64decode(self.ENCRYPTION_KEY + "==")
             if len(decoded) == 32:
@@ -52,9 +53,10 @@ class Settings(BaseSettings):
         except Exception:
             pass
         raw = self.ENCRYPTION_KEY.encode()
-        if len(raw) != 32:
-            raise ValueError("ENCRYPTION_KEY must be exactly 32 bytes (or its base64 encoding)")
-        return raw
+        if len(raw) == 32:
+            return raw
+        # Safe fallback: derive deterministic 32-byte key from whatever string was configured
+        return hashlib.sha256(raw).digest()
 
 
 @lru_cache
