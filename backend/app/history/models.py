@@ -34,6 +34,7 @@ class ResumeHistory(Base):
     model_used: Mapped[str | None] = mapped_column(String(100), nullable=True)
     provider_used: Mapped[str | None] = mapped_column(String(50), nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON array of notes
+    markdown: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_now, index=True

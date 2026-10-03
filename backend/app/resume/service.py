@@ -214,6 +214,98 @@ def _run_build_sync(
                 os.environ[k] = old_v
 
 
+def resume_to_markdown(resume, target_title: str | None = None, target_company: str | None = None) -> str:
+    """Format the generated Resume model into clean, professional Markdown for preview & export."""
+    lines = []
+    # Header
+    name = getattr(resume.basics, "name", "") or "Resume Candidate"
+    lines.append(f"# {name}\n")
+
+    contacts = []
+    if getattr(resume.basics, "email", None):
+        contacts.append(resume.basics.email)
+    if getattr(resume.basics, "phone", None):
+        contacts.append(resume.basics.phone)
+    if getattr(resume.basics, "location", None):
+        contacts.append(resume.basics.location)
+    for link in getattr(resume.basics, "links", []):
+        url = getattr(link, "url", "") if hasattr(link, "url") else link.get("url", "")
+        label = getattr(link, "label", "") if hasattr(link, "label") else link.get("label", "Link")
+        if url:
+            contacts.append(f"[{label}]({url})")
+    if contacts:
+        lines.append(" | ".join(contacts))
+        lines.append("")
+
+    t_title = target_title.strip() if target_title else ""
+    t_comp = target_company.strip() if target_company and target_company.lower() != "none" else ""
+    if t_title and t_comp:
+        lines.append(f"**Target Role:** {t_title} · **Target Company:** {t_comp}\n")
+    elif t_title:
+        lines.append(f"**Target Role:** {t_title}\n")
+
+    # Summary
+    if getattr(resume, "summary", None):
+        lines.append("## Professional Summary")
+        lines.append(resume.summary.strip())
+        lines.append("")
+
+    # Skills
+    if getattr(resume, "skills", None):
+        lines.append("## Core Skills")
+        for group in resume.skills:
+            g_skills = getattr(group, "skills", [])
+            g_cat = getattr(group, "category", "Skills")
+            if g_skills:
+                lines.append(f"- **{g_cat}**: {', '.join(g_skills)}")
+        lines.append("")
+
+    # Experience
+    if getattr(resume, "experience", None):
+        lines.append("## Work Experience")
+        for exp in resume.experience:
+            dates = f"{exp.start} – {exp.end or 'Present'}"
+            loc = f" · {exp.location}" if exp.location else ""
+            lines.append(f"### {exp.title} | {exp.company}{loc}")
+            lines.append(f"*{dates}*\n")
+            for b in exp.bullets:
+                lines.append(f"- {b.text}")
+            lines.append("")
+
+    # Projects
+    if getattr(resume, "projects", None):
+        lines.append("## Key Projects")
+        for proj in resume.projects:
+            url_part = f" — [Project Link]({proj.url})" if proj.url else ""
+            lines.append(f"### {proj.name}{url_part}")
+            for b in proj.bullets:
+                lines.append(f"- {b.text}")
+            lines.append("")
+
+    # Education
+    if getattr(resume, "education", None):
+        lines.append("## Education")
+        for edu in resume.education:
+            dates = f"{edu.start} – {edu.end or 'Present'}" if edu.start or edu.end else ""
+            lines.append(f"### {edu.degree} · {edu.institution}")
+            if dates:
+                lines.append(f"*{dates}*\n")
+            for d in getattr(edu, "details", []):
+                lines.append(f"- {d}")
+            lines.append("")
+
+    # Certifications
+    if getattr(resume, "certifications", None):
+        lines.append("## Certifications")
+        for cert in resume.certifications:
+            issuer = f" ({cert.issuer})" if cert.issuer else ""
+            date_str = f" · {cert.date}" if cert.date else ""
+            lines.append(f"- **{cert.name}**{issuer}{date_str}")
+        lines.append("")
+
+    return "\n".join(lines).strip()
+
+
 # ── Async streaming build ─────────────────────────────────────────────────────
 
 async def build_resume_stream(
@@ -315,6 +407,26 @@ async def build_resume_stream(
             elif isinstance(getattr(result.ats, "score", None), (int, float)):
                 score_val = int(round(result.ats.score))
 
+        md_content = (
+            resume_to_markdown(
+                result.resume,
+                target_title=result.jd.title,
+                target_company=result.jd.company,
+            )
+            if hasattr(result, "resume") and result.resume
+            else ""
+        )
+        matched_kw = (
+            list(dict.fromkeys(result.ats.matched_must + result.ats.matched_nice))
+            if hasattr(result, "ats") and result.ats
+            else []
+        )
+        missing_kw = (
+            list(dict.fromkeys(result.ats.missing_must + result.ats.missing_nice))
+            if hasattr(result, "ats") and result.ats
+            else []
+        )
+
         history_row = ResumeHistory(
             id=history_id,
             user_id=user.id,
@@ -327,6 +439,7 @@ async def build_resume_stream(
             model_used=model_used,
             provider_used=provider_used,
             notes=notes_json,
+            markdown=md_content,
         )
         db.add(history_row)
         await db.commit()
@@ -339,6 +452,9 @@ async def build_resume_stream(
                 "jd_title": history_row.jd_title,
                 "jd_company": history_row.jd_company,
                 "has_pdf": bool(s3_key_pdf),
+                "markdown": md_content,
+                "matched_keywords": matched_kw,
+                "missing_keywords": missing_kw,
                 "notes": result.notes,
             },
         }

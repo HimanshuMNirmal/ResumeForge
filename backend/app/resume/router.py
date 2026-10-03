@@ -95,14 +95,11 @@ async def generate_resume_endpoint(
         res = await db.execute(select(ResumeHistory).where(ResumeHistory.id == uuid.UUID(history_id)))
         history_row = res.scalar_one_or_none()
 
-    notes = data.get("notes") or []
-    markdown_content = f"# {current_user.name}\n\n## Tailored for {data.get('jd_title', 'Target Role')} at {data.get('jd_company', 'Target Company')}\n\n"
-    if notes:
-        markdown_content += "### Key Alignments & Impact:\n"
-        for note in notes:
-            markdown_content += f"- {note}\n"
-    else:
-        markdown_content += "### Professional Summary\nResults-driven engineer with verified background aligning directly with job specifications.\n"
+    markdown_content = data.get("markdown") or (
+        history_row.markdown if history_row and history_row.markdown else ""
+    )
+    if not markdown_content:
+        markdown_content = f"# {current_user.name}\n\nTailored for {data.get('jd_title', 'Target Role')} at {data.get('jd_company', 'Target Company')}"
 
     return {
         "id": str(history_id or uuid.uuid4()),
@@ -110,13 +107,13 @@ async def generate_resume_endpoint(
         "company": data.get("jd_company") or "Target Company",
         "job_title": data.get("jd_title") or "Target Role",
         "markdown": markdown_content,
-        "matched_keywords": ["Core Architecture", "Python", "FastAPI", "TypeScript", "SQL"],
-        "missing_keywords": ["Kubernetes"],
+        "matched_keywords": data.get("matched_keywords") or ["Core Architecture", "Python", "FastAPI", "TypeScript", "SQL"],
+        "missing_keywords": data.get("missing_keywords") or [],
         "recommendations": [
             {
-                "original": "Contributed to internal codebase and APIs.",
-                "suggested": "Engineered scalable REST APIs and streamlined database interactions for improved system efficiency.",
-                "reason": "Directly targets bullet alignment with JD requirements."
+                "original": "Standard profile experience bullets used.",
+                "suggested": "Add measurable metrics (e.g. % increased, $ saved) to improve ATS readability score.",
+                "reason": "Quantified impact increases ATS readability."
             }
         ],
         "created_at": (
@@ -146,7 +143,7 @@ async def get_resume_history(
             "company": r.jd_company or "",
             "job_title": r.jd_title or "",
             "ats_score": r.ats_score or 0,
-            "markdown": f"# Resume\n\nTailored for {r.jd_title or 'Role'} at {r.jd_company or 'Company'}",
+            "markdown": r.markdown or f"# Resume\n\nTailored for {r.jd_title or 'Role'} at {r.jd_company or 'Company'}",
             "matched_keywords": [],
             "missing_keywords": [],
             "recommendations": [],
@@ -178,7 +175,7 @@ async def get_single_resume_history(
         "company": row.jd_company or "",
         "job_title": row.jd_title or "",
         "ats_score": row.ats_score or 0,
-        "markdown": f"# Resume\n\nTailored for {row.jd_title or 'Role'} at {row.jd_company or 'Company'}",
+        "markdown": row.markdown or f"# Resume\n\nTailored for {row.jd_title or 'Role'} at {row.jd_company or 'Company'}",
         "matched_keywords": [],
         "missing_keywords": [],
         "recommendations": [],
