@@ -14,10 +14,20 @@ from ..auth.models import User
 from ..database import get_db
 from ..history.models import ResumeHistory
 from ..middleware.auth import get_current_user
+from ..storage.s3 import generate_presigned_url
 from .schemas import BuildRequest
 from .service import build_resume_stream
 
 router = APIRouter(prefix="/resume", tags=["resume"])
+
+
+def _safe_presigned_url(s3_key: str | None) -> str | None:
+    if not s3_key:
+        return None
+    try:
+        return generate_presigned_url(s3_key)
+    except Exception:
+        return None
 
 
 @router.post("/build")
@@ -69,12 +79,13 @@ async def generate_resume_endpoint(
 
     selected_key_id = body.get("selected_key_id")
     model = body.get("model")
+    make_pdf = body.get("make_pdf", True) if "make_pdf" in body else body.get("use_pdf", True)
 
     events = []
     async for event in build_resume_stream(
         user=current_user,
         jd_text=jd_text,
-        make_pdf=False,
+        make_pdf=make_pdf,
         db=db,
         selected_key_id=selected_key_id,
         model=model,
@@ -101,6 +112,11 @@ async def generate_resume_endpoint(
     if not markdown_content:
         markdown_content = f"# {current_user.name}\n\nTailored for {data.get('jd_title', 'Target Role')} at {data.get('jd_company', 'Target Company')}"
 
+    docx_key = history_row.s3_key_docx if history_row else data.get("s3_key_docx")
+    pdf_key = history_row.s3_key_pdf if history_row else data.get("s3_key_pdf")
+    docx_url = _safe_presigned_url(docx_key)
+    pdf_url = _safe_presigned_url(pdf_key)
+
     return {
         "id": str(history_id or uuid.uuid4()),
         "ats_score": data.get("ats_score") or 85,
@@ -121,6 +137,10 @@ async def generate_resume_endpoint(
             if history_row and history_row.created_at
             else datetime.now(timezone.utc).isoformat()
         ),
+        "has_docx": bool(docx_key),
+        "has_pdf": bool(pdf_key),
+        "download_docx_url": docx_url,
+        "download_pdf_url": pdf_url,
     }
 
 
@@ -142,12 +162,18 @@ async def get_resume_history(
             "id": str(r.id),
             "company": r.jd_company or "",
             "job_title": r.jd_title or "",
+            "jd_company": r.jd_company or "",
+            "jd_title": r.jd_title or "",
             "ats_score": r.ats_score or 0,
             "markdown": r.markdown or f"# Resume\n\nTailored for {r.jd_title or 'Role'} at {r.jd_company or 'Company'}",
             "matched_keywords": [],
             "missing_keywords": [],
             "recommendations": [],
             "created_at": r.created_at.isoformat() if r.created_at else None,
+            "has_docx": bool(r.s3_key_docx),
+            "has_pdf": bool(r.s3_key_pdf),
+            "download_docx_url": _safe_presigned_url(r.s3_key_docx),
+            "download_pdf_url": _safe_presigned_url(r.s3_key_pdf),
         }
         for r in rows
     ]
@@ -170,14 +196,48 @@ async def get_single_resume_history(
     if not row:
         raise HTTPException(status_code=404, detail="Resume record not found")
 
+    docx_url = _safe_presigned_url(row.s3_key_docx)
+    pdf_url = _safe_presigned_url(row.s3_key_pdf)
+
     return {
         "id": str(row.id),
         "company": row.jd_company or "",
         "job_title": row.jd_title or "",
+        "jd_company": row.jd_company or "",
+        "jd_title": row.jd_title or "",
         "ats_score": row.ats_score or 0,
         "markdown": row.markdown or f"# Resume\n\nTailored for {row.jd_title or 'Role'} at {row.jd_company or 'Company'}",
         "matched_keywords": [],
         "missing_keywords": [],
         "recommendations": [],
         "created_at": row.created_at.isoformat() if row.created_at else None,
+        "has_docx": bool(row.s3_key_docx),
+        "has_pdf": bool(row.s3_key_pdf),
+        "download_docx_url": docx_url,
+        "download_pdf_url": pdf_url,
+    }
+
+
+@router.get("/history/{history_id}/download-urls")
+async def get_resume_download_urls(
+    history_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Re-generate fresh presigned download URLs for a resume history item."""
+    result = await db.execute(
+        select(ResumeHistory).where(
+            ResumeHistory.id == history_id,
+            ResumeHistory.user_id == current_user.id,
+        )
+    )
+    row = result.scalar_one_or_none()
+    if not row:
+        raise HTTPException(status_code=404, detail="Resume record not found")
+
+    return {
+        "download_docx_url": _safe_presigned_url(row.s3_key_docx),
+        "download_pdf_url": _safe_presigned_url(row.s3_key_pdf),
+        "has_docx": bool(row.s3_key_docx),
+        "has_pdf": bool(row.s3_key_pdf),
     }

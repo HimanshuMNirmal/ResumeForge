@@ -26,6 +26,7 @@ export function ResumeStudio() {
   const [md, setMd] = useState("");
   const [result, setResult] = useState<ResumeResult | null>(null);
   const [copied, setCopied] = useState(false);
+  const [downloading, setDownloading] = useState<"docx" | "pdf" | null>(null);
   const preview = useRef<HTMLDivElement>(null);
   const resumeId = useSearchParams().get("resume");
   const saved = useQuery({ queryKey: ["resume", resumeId], enabled: !!resumeId, queryFn: () => api.resume.get(resumeId!) });
@@ -73,21 +74,32 @@ export function ResumeStudio() {
     });
   };
   const copy = async () => { await navigator.clipboard.writeText(md); setCopied(true); setTimeout(() => setCopied(false), 1500); };
-  const downloadMd = () => {
-    const blob = new Blob([md], { type: "text/markdown;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = Object.assign(document.createElement("a"), {
-      href: url,
-      download: `${(result?.job_title || "resume").toLowerCase().replace(/[^a-z0-9]+/g, "-")}.md`,
-    });
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-  const exportPdf = () => {
-    const w = window.open("", "_blank");
-    if (!w || !preview.current) return toast.error("Allow pop-ups to export as PDF.");
-    w.document.write(`<title>Resume</title><style>body{font:14px/1.5 system-ui;max-width:760px;margin:32px auto;color:#18181b}h1{font-size:24px;margin:0}h2{font-size:13px;border-bottom:1px solid #d4d4d8;margin:18px 0 6px;padding-bottom:2px}ul{padding-left:18px;margin:4px 0}</style>${preview.current.innerHTML}`);
-    w.document.close(); w.focus(); w.print();
+  const downloadFile = async (format: "docx" | "pdf") => {
+    if (!result) return;
+    setDownloading(format);
+    try {
+      let url = format === "docx" ? result.download_docx_url : result.download_pdf_url;
+      if (!url && result.id) {
+        const fresh = await api.resume.downloadUrls(result.id);
+        url = format === "docx" ? fresh.download_docx_url : fresh.download_pdf_url;
+      }
+      if (url) {
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `${(result.job_title || "resume").toLowerCase().replace(/[^a-z0-9]+/g, "-")}.${format}`;
+        a.target = "_blank";
+        a.rel = "noopener noreferrer";
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      } else {
+        toast.error(`${format.toUpperCase()} file is not available for this resume.`);
+      }
+    } catch {
+      toast.error(`Failed to download ${format.toUpperCase()}.`);
+    } finally {
+      setDownloading(null);
+    }
   };
 
   const score = result?.ats_score ?? 0;
@@ -150,10 +162,30 @@ export function ResumeStudio() {
               className={cn("-mb-px border-b-2 px-3 py-2 text-sm", tab === t ? "border-zinc-900 font-medium" : "border-transparent text-zinc-500 hover:text-zinc-900")}>{t}</button>
           ))}
           {result && (
-            <div className="ml-auto flex gap-1 pb-1">
+            <div className="ml-auto flex items-center gap-1.5 pb-1">
               <button onClick={copy} className="inline-flex items-center gap-1 rounded-md border border-zinc-200 px-2 py-1 text-xs hover:bg-zinc-50">{copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}{copied ? "Copied" : "Copy"}</button>
-              <button onClick={downloadMd} className="inline-flex items-center gap-1 rounded-md border border-zinc-200 px-2 py-1 text-xs hover:bg-zinc-50"><Download className="size-3.5" />Download .md</button>
-              <button onClick={exportPdf} className="inline-flex items-center gap-1 rounded-md border border-zinc-200 px-2 py-1 text-xs hover:bg-zinc-50"><FileDown className="size-3.5" />Export PDF</button>
+              {(result.has_docx || result.download_docx_url || !result.has_pdf) && (
+                <button
+                  onClick={() => downloadFile("docx")}
+                  disabled={downloading === "docx"}
+                  className="inline-flex items-center gap-1 rounded-md border border-zinc-200 px-2 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
+                  title="Download DOCX file from S3"
+                >
+                  {downloading === "docx" ? <Loader2 className="size-3.5 animate-spin" /> : <FileDown className="size-3.5 text-blue-600" />}
+                  Download DOCX
+                </button>
+              )}
+              {(result.has_pdf || result.download_pdf_url) && (
+                <button
+                  onClick={() => downloadFile("pdf")}
+                  disabled={downloading === "pdf"}
+                  className="inline-flex items-center gap-1 rounded-md border border-zinc-200 px-2 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
+                  title="Download PDF file from S3"
+                >
+                  {downloading === "pdf" ? <Loader2 className="size-3.5 animate-spin" /> : <FileDown className="size-3.5 text-red-600" />}
+                  Download PDF
+                </button>
+              )}
             </div>
           )}
         </div>

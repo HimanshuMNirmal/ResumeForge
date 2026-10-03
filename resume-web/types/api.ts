@@ -30,9 +30,55 @@ export interface GenerateRequest {
 }
 export interface BulletRecommendation { original: string; suggested: string; reason?: string }
 export interface ResumeResult {
-  id: string; markdown: string; ats_score: number;
-  matched_keywords: string[]; missing_keywords: string[];
-  recommendations: BulletRecommendation[]; created_at?: string; company?: string; job_title?: string;
+  id: string;
+  markdown: string;
+  ats_score: number;
+  matched_keywords: string[];
+  missing_keywords: string[];
+  recommendations: BulletRecommendation[];
+  created_at?: string;
+  company?: string;
+  job_title?: string;
+  has_docx?: boolean;
+  has_pdf?: boolean;
+  download_docx_url?: string | null;
+  download_pdf_url?: string | null;
+}
+
+export interface HistoryItem {
+  id: string;
+  jd_title?: string | null;
+  jd_company?: string | null;
+  job_title?: string | null;
+  company?: string | null;
+  ats_score?: number | null;
+  model_used?: string | null;
+  provider_used?: string | null;
+  has_docx: boolean;
+  has_pdf: boolean;
+  download_docx_url?: string | null;
+  download_pdf_url?: string | null;
+  created_at: string;
+  markdown?: string;
+}
+
+export interface HistoryListResponse {
+  items: HistoryItem[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface HistoryDetail extends HistoryItem {
+  jd_text?: string;
+  notes?: string | null;
+}
+
+export interface DownloadUrlsResponse {
+  download_docx_url: string | null;
+  download_pdf_url: string | null;
+  has_docx?: boolean;
+  has_pdf?: boolean;
 }
 
 export interface APIError { detail: string; errors?: string[] }

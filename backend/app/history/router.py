@@ -17,9 +17,18 @@ from .schemas import HistoryDetailOut, HistoryItemOut, HistoryListOut
 router = APIRouter(prefix="/history", tags=["history"])
 
 
+def _safe_presigned_url(s3_key: str | None) -> str | None:
+    if not s3_key:
+        return None
+    try:
+        return generate_presigned_url(s3_key)
+    except Exception:
+        return None
+
+
 def _to_item_out(row: ResumeHistory) -> HistoryItemOut:
-    docx_url = generate_presigned_url(row.s3_key_docx) if row.s3_key_docx else None
-    pdf_url = generate_presigned_url(row.s3_key_pdf) if row.s3_key_pdf else None
+    docx_url = _safe_presigned_url(row.s3_key_docx)
+    pdf_url = _safe_presigned_url(row.s3_key_pdf)
     return HistoryItemOut(
         id=row.id,
         jd_title=row.jd_title,
@@ -81,6 +90,31 @@ async def get_history_item(
 
     item = _to_item_out(row)
     return HistoryDetailOut(**item.model_dump(), jd_text=row.jd_text, notes=row.notes)
+
+
+@router.get("/{history_id}/download-urls")
+async def get_download_urls(
+    history_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Re-generate fresh presigned download URLs for a history item."""
+    result = await db.execute(
+        select(ResumeHistory).where(
+            ResumeHistory.id == history_id,
+            ResumeHistory.user_id == current_user.id,
+        )
+    )
+    row = result.scalar_one_or_none()
+    if not row:
+        raise HTTPException(status_code=404, detail="History entry not found")
+
+    return {
+        "download_docx_url": _safe_presigned_url(row.s3_key_docx),
+        "download_pdf_url": _safe_presigned_url(row.s3_key_pdf),
+        "has_docx": bool(row.s3_key_docx),
+        "has_pdf": bool(row.s3_key_pdf),
+    }
 
 
 @router.delete("/{history_id}", status_code=204)

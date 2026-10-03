@@ -1,69 +1,69 @@
 import type { Metadata } from "next";
-import { CheckCircle2, Download, FileJson, KeyRound, Lock, ScanSearch, ShieldCheck, Sparkles, WandSparkles } from "lucide-react";
+import { CheckCircle2, FileDown, FileJson, FileText, KeyRound, ScanSearch, ShieldCheck, Target } from "lucide-react";
 import { HeroPreview } from "@/components/landing/HeroPreview";
 import { LandingNavbar } from "@/components/landing/Navbar";
 import { HeroActions } from "@/components/landing/HeroActions";
 
 export const metadata: Metadata = {
-  title: "ResumeForge — Truthful resume tailoring with ATS scoring",
-  description: "Tailor your resume to any job posting with ATS keyword scoring. Generate free with standard profile matching or bring your own AI key for intelligent rewrites.",
+  title: "ResumeForge — Targeted resume tailoring with ATS scoring",
+  description: "Tailor your resume to any job description with real-time ATS keyword matching, clean single-column formatting, and direct DOCX and PDF downloads.",
   alternates: { canonical: "/" },
 };
 
 const FEATURES = [
   {
-    icon: Sparkles,
-    badge: "Free forever",
-    title: "Truthful Tailoring (0 AI Keys)",
-    body: "Generate tailored resumes immediately using deterministic keyword matching and verified facts directly from your profile—zero hallucination risk and no AI keys needed.",
+    icon: ScanSearch,
+    badge: "Keyword Analysis",
+    title: "Real-time ATS Keyword Matching",
+    body: "Identify precisely which hard skills and competencies the target job description requires, with clear visibility into matched and missing keywords.",
   },
   {
-    icon: ScanSearch,
-    badge: "ATS analysis",
-    title: "Real-time ATS Scoring",
-    body: "See exactly which job description keywords your resume matches and which ones are missing, complete with readability and formatting compliance checks.",
+    icon: FileText,
+    badge: "ATS Standards",
+    title: "Verified Single-Column Hierarchy",
+    body: "Built specifically to parse without text scramble in Workday, Greenhouse, Taleo, and Lever. Clean typographic hierarchy with zero multi-column bugs.",
+  },
+  {
+    icon: FileDown,
+    badge: "Direct Storage",
+    title: "Direct S3 DOCX & PDF Downloads",
+    body: "Download your finished resume instantly in editable Word (.docx) or vector PDF directly from secure cloud storage—no browser print popups.",
   },
   {
     icon: KeyRound,
-    badge: "Bring-your-own-key",
-    title: "Optional AI Provider Keys",
-    body: "Optionally connect your personal OpenAI, Anthropic, or Gemini key for AI bullet rephrasing. Stored keys are encrypted with AES-256-GCM.",
-  },
-  {
-    icon: Download,
-    badge: "Instant exports",
-    title: "PDF & Markdown Downloads",
-    body: "Export ATS-compliant single-column resumes directly to PDF or raw Markdown with one click, ready to apply immediately.",
+    badge: "BYOK Keys",
+    title: "Optional AI Provider Integration",
+    body: "Optionally connect your personal OpenAI, Anthropic, or Gemini key for targeted bullet rephrasing. Stored securely with AES-256-GCM encryption.",
   },
   {
     icon: FileJson,
-    badge: "Portability",
-    title: "JSON In, JSON Out",
-    body: "Export your entire career profile to portable JSON or import an existing profile anytime. Your career data is 100% yours and never vendor locked.",
+    badge: "Data Ownership",
+    title: "Structured JSON Profile Portability",
+    body: "Export your complete career profile to standard JSON anytime or import an existing profile. Your professional data remains 100% yours.",
   },
   {
     icon: ShieldCheck,
-    badge: "Privacy first",
-    title: "Private & Secure",
-    body: "All data and credentials are kept securely under your account. Session tokens and keys are never shared across users or third parties.",
+    badge: "Privacy First",
+    title: "Secure & Account Isolated",
+    body: "Your profile history, tailored resumes, and credentials remain private to your account. Never used for public training datasets.",
   },
 ];
 
 const STEPS = [
   {
     step: "01",
-    title: "Build or import your profile",
-    body: "Fill out your career history, skills, and projects, or upload your structured profile JSON in seconds.",
+    title: "Build or import career profile",
+    body: "Add your career history, projects, and verified technical skills once, or import your structured JSON profile in seconds.",
   },
   {
     step: "02",
-    title: "Paste any target job posting",
-    body: "Paste the job description from LinkedIn, Indeed, or company sites into Resume Studio.",
+    title: "Paste any target job description",
+    body: "Paste the job description from LinkedIn, Greenhouse, or any company careers page into the studio.",
   },
   {
     step: "03",
-    title: "Get your tailored resume & ATS score",
-    body: "Inspect matched keywords, export as PDF or Markdown, and apply with confidence.",
+    title: "Inspect ATS match & export",
+    body: "Review keyword coverage, check bullet suggestions, and download your tailored DOCX or PDF file directly.",
   },
 ];
 
@@ -73,7 +73,7 @@ const jsonLd = {
   name: "ResumeForge",
   applicationCategory: "BusinessApplication",
   operatingSystem: "Web",
-  description: "Tailor your resume to any job description with ATS keyword scoring, using standard truthful matching or your own AI key.",
+  description: "Tailor your resume to any job description with real-time ATS keyword matching, clean formatting, and direct DOCX/PDF export.",
   offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
 };
 
@@ -83,59 +83,56 @@ export default function Landing() {
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
       <LandingNavbar />
 
-      <main className="space-y-20 pb-20">
+      <main className="space-y-16 pb-20 sm:space-y-24">
         {/* Hero Section */}
-        <section className="mx-auto grid max-w-6xl items-center gap-12 px-4 pt-10 md:px-6 lg:grid-cols-2 lg:pt-16">
+        <section className="mx-auto grid max-w-6xl items-center gap-10 px-4 pt-8 md:px-6 lg:grid-cols-2 lg:pt-16">
           <div className="space-y-4">
             <div className="inline-flex items-center gap-2 rounded-full border border-zinc-200 bg-white px-3 py-1 text-xs font-medium text-zinc-700 shadow-xs">
               <span className="flex size-2 rounded-full bg-emerald-500" />
-              <span>Free Truthful Matching · Optional AI Keys</span>
+              <span>Verified Profiles · Direct S3 DOCX & PDF Exports</span>
             </div>
 
-            <h1 className="text-4xl font-bold tracking-tight text-zinc-900 sm:text-5xl sm:leading-tight">
-              A resume tailored to the exact job you want
+            <h1 className="text-3xl font-bold tracking-tight text-zinc-900 sm:text-5xl sm:leading-tight">
+              Targeted resumes engineered for modern hiring systems
             </h1>
 
             <p className="max-w-lg text-base leading-relaxed text-zinc-600 sm:text-lg">
-              Paste any job description. ResumeForge instantly aligns your verified skills, scores your ATS keyword coverage, and generates ready-to-send resumes.
+              Align your verified achievements with any job posting. Inspect real-time keyword coverage, eliminate formatting parse errors, and download interview-ready resumes directly.
             </p>
 
             <HeroActions />
 
-            <div className="pt-2 flex flex-wrap items-center gap-4 text-xs text-zinc-500">
+            <div className="flex flex-wrap items-center gap-4 pt-2 text-xs text-zinc-500">
               <span className="flex items-center gap-1">
-                <CheckCircle2 className="size-3.5 text-emerald-600" /> No AI key required
+                <CheckCircle2 className="size-3.5 text-emerald-600" /> Direct DOCX & PDF downloads
               </span>
               <span className="flex items-center gap-1">
                 <CheckCircle2 className="size-3.5 text-emerald-600" /> Single-column ATS format
               </span>
               <span className="flex items-center gap-1">
-                <CheckCircle2 className="size-3.5 text-emerald-600" /> Instant PDF download
+                <CheckCircle2 className="size-3.5 text-emerald-600" /> 100% portable JSON
               </span>
             </div>
           </div>
 
-          <div className="relative">
-            <div className="absolute -inset-1 rounded-xl bg-linear-to-r from-zinc-200 to-zinc-100 opacity-60 blur-xs" />
-            <div className="relative">
-              <HeroPreview />
-            </div>
+          <div className="relative w-full">
+            <HeroPreview />
           </div>
         </section>
 
         {/* How It Works Section */}
         <section className="mx-auto max-w-6xl px-4 md:px-6">
-          <div className="border-t border-zinc-200 pt-14">
+          <div className="border-t border-zinc-200 pt-12 sm:pt-14">
             <div className="mb-10 text-center">
               <h2 className="text-xs font-semibold uppercase tracking-wider text-zinc-500">
                 How It Works
               </h2>
               <p className="mt-2 text-2xl font-bold tracking-tight text-zinc-900 sm:text-3xl">
-                From job posting to interview-ready resume in 3 steps
+                From job posting to tailored resume in 3 steps
               </p>
             </div>
 
-            <div className="grid gap-6 md:grid-cols-3">
+            <div className="grid gap-5 md:grid-cols-3">
               {STEPS.map((s) => (
                 <div
                   key={s.step}
@@ -154,13 +151,13 @@ export default function Landing() {
 
         {/* Features Grid */}
         <section aria-labelledby="features" className="mx-auto max-w-6xl px-4 md:px-6">
-          <div className="border-t border-zinc-200 pt-14">
+          <div className="border-t border-zinc-200 pt-12 sm:pt-14">
             <div className="mb-10">
               <h2 id="features" className="text-xs font-semibold uppercase tracking-wider text-zinc-500">
-                Capabilities
+                Core Architecture
               </h2>
               <p className="mt-2 text-2xl font-bold tracking-tight text-zinc-900 sm:text-3xl">
-                Engineered for speed, privacy, and applicant tracking systems
+                Built for reliability, privacy, and applicant tracking compliance
               </p>
             </div>
 
@@ -190,7 +187,7 @@ export default function Landing() {
 
         {/* Footer */}
         <footer className="mx-auto max-w-6xl border-t border-zinc-200 px-4 pt-8 text-center text-xs text-zinc-500 md:px-6">
-          <p>© {new Date().getFullYear()} ResumeForge. Built with truthful tailoring and open standards.</p>
+          <p>© 2026 ResumeForge. Precision resume tailoring for engineers and professionals.</p>
         </footer>
       </main>
     </div>

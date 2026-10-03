@@ -1,7 +1,11 @@
 import type {
   ApiKey,
   AuthResponse,
+  DownloadUrlsResponse,
   GenerateRequest,
+  HistoryDetail,
+  HistoryItem,
+  HistoryListResponse,
   ImportResponse,
   LoginRequest,
   ModelsResponse,
@@ -317,7 +321,13 @@ export const api = {
   resume: {
     generate: (b: GenerateRequest) =>
       json<ResumeResult>("/api/v1/resume/generate", { method: "POST", body: JSON.stringify(b) }),
-    history: () => json<ResumeResult[]>("/api/v1/resume/history"),
+    history: async (): Promise<HistoryItem[]> => {
+      const res = await json<HistoryListResponse | HistoryItem[]>("/api/v1/history");
+      if (Array.isArray(res)) return res;
+      return res.items || [];
+    },
     get: (id: string) => json<ResumeResult>(`/api/v1/resume/history/${id}`),
+    downloadUrls: (id: string) =>
+      json<DownloadUrlsResponse>(`/api/v1/history/${id}/download-urls`),
   },
 };
