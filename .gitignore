@@ -41,3 +41,6 @@ credentials*.txt
 setup_aws_resources*
 *.pem
 *.key
+*.pub
+resumeforge-ec2*
+user-data.sh
