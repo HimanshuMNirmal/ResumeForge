@@ -55,6 +55,22 @@ services:
         uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
       "
 
+  # ── Next.js frontend ───────────────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./resume-web
+      dockerfile: Dockerfile
+      args:
+        # Backend URL as seen FROM THE BROWSER (not from inside Docker network)
+        NEXT_PUBLIC_API_URL: http://localhost:8000
+        NEXT_PUBLIC_SITE_URL: http://localhost:3000
+    container_name: resumeforge_frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "3000:3000"
+
   # ── pgAdmin (dev only) ─────────────────────────────────────────────────────
   pgadmin:
     image: dpage/pgadmin4:latest
@@ -72,3 +88,4 @@ services:
 
 volumes:
   postgres_data:
+
