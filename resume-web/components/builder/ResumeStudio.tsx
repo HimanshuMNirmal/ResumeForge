@@ -4,21 +4,20 @@ import { useSearchParams } from "next/navigation";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import ReactMarkdown from "react-markdown";
 import { toast } from "sonner";
-import { Check, Copy, FileDown, Loader2, WandSparkles } from "lucide-react";
+import { Check, Copy, Download, FileDown, Loader2, WandSparkles } from "lucide-react";
 import { api } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 import type { ResumeResult } from "@/types/api";
 
 const TABS = ["Preview", "ATS match", "Markdown"] as const;
 const field = "w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm focus:border-zinc-900 focus:outline-none";
-const PLATFORM = "";
 
 const tone = (v: number) => (v < 34 ? "Keep it concise and direct." : v > 66 ? "Use fuller, more detailed bullets." : "");
 const focus = (v: number) => (v < 34 ? "Emphasize technical skills and tools." : v > 66 ? "Emphasize measurable impact and outcomes." : "");
 
 export function ResumeStudio() {
   const [jd, setJd] = useState("");
-  const [keyId, setKeyId] = useState(PLATFORM);
+  const [keyId, setKeyId] = useState("");
   const [model, setModel] = useState("");
   const [extra, setExtra] = useState("");
   const [toneV, setToneV] = useState(50);
@@ -37,7 +36,17 @@ export function ResumeStudio() {
   const activeKeys = keys.data?.filter((k) => k.is_active) ?? [];
   const options = useMemo(() => {
     const k = activeKeys.find((x) => x.id === keyId);
-    return (k ? models.data?.providers[k.provider] : models.data?.platform_defaults) ?? [];
+    if (k && models.data?.providers?.[k.provider]) {
+      return models.data.providers[k.provider] ?? [];
+    }
+    if (k && models.data?.strong_models && models.data?.fast_models) {
+      return [...models.data.strong_models, ...models.data.fast_models];
+    }
+    return models.data?.platform_defaults ?? [
+      "claude-haiku-4-5-20251001",
+      "gpt-4.1-mini",
+      "gemini-2.5-flash",
+    ];
   }, [keyId, activeKeys, models.data]);
   const chosenModel = options.includes(model) ? model : options[0] ?? "";
 
@@ -49,13 +58,25 @@ export function ResumeStudio() {
       setTab("Preview");
     },
   });
-  const canRun = jd.trim().length >= 80 && !!chosenModel && !gen.isPending;
+  const canRun = jd.trim().length >= 80 && !gen.isPending;
 
   const run = () => gen.mutate({
-    job_description: jd.trim(), selected_key_id: keyId || null, model: chosenModel,
+    job_description: jd.trim(),
+    selected_key_id: keyId || null,
+    model: keyId ? chosenModel : "",
     custom_instructions: [tone(toneV), focus(focusV), extra.trim()].filter(Boolean).join(" "),
   });
   const copy = async () => { await navigator.clipboard.writeText(md); setCopied(true); setTimeout(() => setCopied(false), 1500); };
+  const downloadMd = () => {
+    const blob = new Blob([md], { type: "text/markdown;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = Object.assign(document.createElement("a"), {
+      href: url,
+      download: `${(result?.job_title || "resume").toLowerCase().replace(/[^a-z0-9]+/g, "-")}.md`,
+    });
+    a.click();
+    URL.revokeObjectURL(url);
+  };
   const exportPdf = () => {
     const w = window.open("", "_blank");
     if (!w || !preview.current) return toast.error("Allow pop-ups to export as PDF.");
@@ -73,18 +94,26 @@ export function ResumeStudio() {
           {jd.length > 0 && jd.trim().length < 80 && <span className="text-xs text-zinc-500">Paste a bit more so keywords can be matched.</span>}
         </label>
         <label className="block space-y-1">
-          <span className="text-xs font-medium text-zinc-600">API key</span>
+          <span className="text-xs font-medium text-zinc-600">AI Key</span>
           <select className={field} value={keyId} onChange={(e) => setKeyId(e.target.value)}>
-            <option value={PLATFORM}>Platform default</option>
-            {activeKeys.map((k) => <option key={k.id} value={k.id}>{k.label}</option>)}
+            {/* Platform default commented out */}
+            {/* <option value={PLATFORM}>Platform default</option> */}
+            <option value="">No AI key (Standard Resume)</option>
+            {activeKeys.map((k) => <option key={k.id} value={k.id}>{k.label} ({k.provider})</option>)}
           </select>
         </label>
-        <label className="block space-y-1">
-          <span className="text-xs font-medium text-zinc-600">Model</span>
-          <select className={field} value={chosenModel} onChange={(e) => setModel(e.target.value)} disabled={!options.length}>
-            {models.isLoading ? <option>Loading models…</option> : options.length ? options.map((m) => <option key={m}>{m}</option>) : <option>No models available</option>}
-          </select>
-        </label>
+        {keyId ? (
+          <label className="block space-y-1">
+            <span className="text-xs font-medium text-zinc-600">Model</span>
+            <select className={field} value={chosenModel} onChange={(e) => setModel(e.target.value)} disabled={!options.length}>
+              {models.isLoading ? <option>Loading models…</option> : options.length ? options.map((m) => <option key={m}>{m}</option>) : <option>No models available</option>}
+            </select>
+          </label>
+        ) : (
+          <div className="rounded-md border border-zinc-100 bg-zinc-50 px-3 py-2 text-xs text-zinc-500">
+            Generating without AI key — will build directly from your truthful profile.
+          </div>
+        )}
         {([["Tone", toneV, setToneV, "Concise", "Detailed"], ["Focus", focusV, setFocusV, "Skills", "Impact"]] as const).map(([l, v, set, a, b]) => (
           <label key={l} className="block space-y-1">
             <span className="text-xs font-medium text-zinc-600">{l}</span>
@@ -97,7 +126,7 @@ export function ResumeStudio() {
           <textarea rows={2} className={field} value={extra} onChange={(e) => setExtra(e.target.value)} placeholder="e.g. Keep it to one page" />
         </label>
         <button disabled={!canRun} onClick={run} className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-zinc-900 px-3 py-2 text-sm text-white hover:bg-zinc-800 disabled:opacity-40">
-          {gen.isPending ? <Loader2 className="size-4 animate-spin" /> : <WandSparkles className="size-4" />}{gen.isPending ? "Tailoring…" : "Generate resume"}
+          {gen.isPending ? <Loader2 className="size-4 animate-spin" /> : <WandSparkles className="size-4" />}{gen.isPending ? "Generating…" : "Generate resume"}
         </button>
       </section>
 
@@ -110,6 +139,7 @@ export function ResumeStudio() {
           {result && (
             <div className="ml-auto flex gap-1 pb-1">
               <button onClick={copy} className="inline-flex items-center gap-1 rounded-md border border-zinc-200 px-2 py-1 text-xs hover:bg-zinc-50">{copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}{copied ? "Copied" : "Copy"}</button>
+              <button onClick={downloadMd} className="inline-flex items-center gap-1 rounded-md border border-zinc-200 px-2 py-1 text-xs hover:bg-zinc-50"><Download className="size-3.5" />Download .md</button>
               <button onClick={exportPdf} className="inline-flex items-center gap-1 rounded-md border border-zinc-200 px-2 py-1 text-xs hover:bg-zinc-50"><FileDown className="size-3.5" />Export PDF</button>
             </div>
           )}

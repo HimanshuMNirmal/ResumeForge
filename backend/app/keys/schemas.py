@@ -47,5 +47,7 @@ class KeyOut(BaseModel):
 
 class AvailableModelsOut(BaseModel):
     provider: str
-    fast_models: list[str]
-    strong_models: list[str]
+    fast_models: list[str] = []
+    strong_models: list[str] = []
+    providers: dict[str, list[str]] = {}
+    platform_defaults: list[str] = []

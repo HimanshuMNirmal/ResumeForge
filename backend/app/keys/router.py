@@ -92,12 +92,24 @@ async def get_models(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Return available model options for the user's active provider."""
+    """Return available model options for the user's active provider and all providers."""
     active = await get_active_key(current_user.id, db)
     provider = active.provider if active else "anthropic"
-    models = AVAILABLE_MODELS.get(provider, {})
+    active_models = AVAILABLE_MODELS.get(provider, {})
+
+    all_providers: dict[str, list[str]] = {}
+    platform_defaults: list[str] = []
+    for prov, m_dict in AVAILABLE_MODELS.items():
+        fast = m_dict.get("fast", [])
+        strong = m_dict.get("strong", [])
+        all_providers[prov] = list(dict.fromkeys(strong + fast))
+        if fast:
+            platform_defaults.append(fast[0])
+
     return AvailableModelsOut(
         provider=provider,
-        fast_models=models.get("fast", []),
-        strong_models=models.get("strong", []),
+        fast_models=active_models.get("fast", []),
+        strong_models=active_models.get("strong", []),
+        providers=all_providers,
+        platform_defaults=platform_defaults,
     )
