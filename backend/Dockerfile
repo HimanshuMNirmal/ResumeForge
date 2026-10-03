@@ -12,9 +12,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY backend/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Install core engine in editable mode
+# Install core engine
+COPY pyproject.toml .
 COPY src/ ./src/
-RUN pip install --no-cache-dir -e ./src[all]
+RUN pip install --no-cache-dir --no-deps .
+
 
 # ── Stage 2: runtime ──────────────────────────────────────────────────────────
 FROM python:3.12-slim AS runtime

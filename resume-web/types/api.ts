@@ -30,3 +30,27 @@ export interface ResumeResult {
 }
 
 export interface APIError { detail: string; errors?: string[] }
+
+export interface User {
+  id: string;
+  name: string;
+  email: string;
+  is_active: boolean;
+  created_at?: string;
+}
+
+export interface LoginRequest {
+  email: string;
+  password: string;
+}
+
+export interface RegisterRequest {
+  name: string;
+  email: string;
+  password: string;
+}
+
+export interface AuthResponse {
+  access_token: string;
+  user?: User;
+}

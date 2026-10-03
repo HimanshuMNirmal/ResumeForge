@@ -4,7 +4,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, String, Text, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -19,8 +19,12 @@ class ApiKey(Base):
     __tablename__ = "api_keys"
     __table_args__ = (
         # Only one active key per user enforced at DB level
-        UniqueConstraint("user_id", name="uq_api_keys_one_active_per_user",
-                         postgresql_where="is_active = true"),
+        Index(
+            "uq_api_keys_one_active_per_user",
+            "user_id",
+            unique=True,
+            postgresql_where=text("is_active = true"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { FileJson, Lock, ScanSearch } from "lucide-react";
 import { HeroPreview } from "@/components/landing/HeroPreview";
+import { LandingNavbar } from "@/components/landing/Navbar";
 
 export const metadata: Metadata = {
   title: "Resume tailoring with your own AI key",
@@ -15,7 +16,7 @@ const FEATURES = [
 ];
 
 const jsonLd = {
-  "@context": "https://schema.org", "@type": "SoftwareApplication", name: "Tailor",
+  "@context": "https://schema.org", "@type": "SoftwareApplication", name: "ResumeForge",
   applicationCategory: "BusinessApplication", operatingSystem: "Web",
   description: "Tailor your resume to any job description with ATS keyword scoring, using your own AI provider key.",
   offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
@@ -25,13 +26,7 @@ export default function Landing() {
   return (
     <>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
-      <header className="mx-auto flex max-w-6xl items-center justify-between px-4 py-4 md:px-6">
-        <span className="text-sm font-semibold tracking-tight">Tailor</span>
-        <nav aria-label="Main" className="flex gap-4 text-sm text-zinc-600">
-          <Link href="/profile" className="hover:text-zinc-900">Profile</Link>
-          <Link href="/builder" className="rounded-md bg-zinc-900 px-3 py-1.5 text-white hover:bg-zinc-800">Open builder</Link>
-        </nav>
-      </header>
+      <LandingNavbar />
       <main>
         <section className="mx-auto grid max-w-6xl items-center gap-10 px-4 py-14 md:px-6 lg:grid-cols-2">
           <div>
