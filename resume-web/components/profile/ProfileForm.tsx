@@ -29,6 +29,49 @@ function Text({ label, value, onChange, error, ...rest }: { label: string; value
   return <Field label={label} error={error}><input {...rest} className={cn(input, error && "border-red-400")} value={value} onChange={(e) => onChange(e.target.value)} /></Field>;
 }
 
+function normalizeProfile(raw: any): Profile {
+  if (!raw) return EMPTY;
+  return {
+    full_name: raw.full_name || "",
+    email: raw.email || "",
+    phone: raw.phone || "",
+    location: raw.location || "",
+    linkedin: raw.linkedin || "",
+    github: raw.github || "",
+    portfolio: raw.portfolio || "",
+    experience: Array.isArray(raw.experience)
+      ? raw.experience.map((e: any) => ({
+          company: e?.company || "",
+          role: e?.role || "",
+          start_date: e?.start_date || "",
+          end_date: e?.end_date ?? null,
+          bullets: Array.isArray(e?.bullets)
+            ? e.bullets.map((b: any) => ({
+                text: typeof b === "string" ? b : (b?.text || ""),
+                skills: Array.isArray(b?.skills) ? b.skills : [],
+              }))
+            : [],
+        }))
+      : [],
+    education: Array.isArray(raw.education)
+      ? raw.education.map((ed: any) => ({
+          institution: ed?.institution || "",
+          degree: ed?.degree || "",
+          field: ed?.field || "",
+          start_date: ed?.start_date || "",
+          end_date: ed?.end_date ?? null,
+        }))
+      : [],
+    certifications: Array.isArray(raw.certifications) ? raw.certifications : [],
+    skills: {
+      languages: Array.isArray(raw.skills?.languages) ? raw.skills.languages : [],
+      frameworks: Array.isArray(raw.skills?.frameworks) ? raw.skills.frameworks : [],
+      tools: Array.isArray(raw.skills?.tools) ? raw.skills.tools : [],
+      soft: Array.isArray(raw.skills?.soft) ? raw.skills.soft : [],
+    },
+  };
+}
+
 export function ProfileForm() {
   const qc = useQueryClient();
   const [tab, setTab] = useState<(typeof TABS)[number]>("Personal");
@@ -39,9 +82,9 @@ export function ProfileForm() {
     refetchOnWindowFocus: false,
     queryFn: () => api.profile.get().catch((e) => { if (e instanceof ApiError && e.status === 404) return EMPTY; throw e; }),
   });
-  useEffect(() => { if (data) setDraft(data); }, [data]);
+  useEffect(() => { if (data) setDraft(normalizeProfile(data)); }, [data]);
 
-  const dirty = useMemo(() => !!data && JSON.stringify(data) !== JSON.stringify(draft), [data, draft]);
+  const dirty = useMemo(() => !!data && JSON.stringify(normalizeProfile(data)) !== JSON.stringify(draft), [data, draft]);
   useEffect(() => {
     if (!dirty) return;
     const h = (e: BeforeUnloadEvent) => e.preventDefault();
@@ -50,8 +93,8 @@ export function ProfileForm() {
   }, [dirty]);
 
   const emailError = draft.email && !/^\S+@\S+\.\S+$/.test(draft.email) ? "Enter a valid email address" : undefined;
-  const nameError = dirty && !draft.full_name.trim() ? "Name is required" : undefined;
-  const invalid = !!emailError || !draft.full_name.trim();
+  const nameError = dirty && !(draft.full_name || "").trim() ? "Name is required" : undefined;
+  const invalid = !!emailError || !(draft.full_name || "").trim();
 
   const save = useMutation({
     mutationFn: api.profile.update,

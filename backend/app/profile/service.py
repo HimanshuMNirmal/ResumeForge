@@ -6,6 +6,7 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..auth.models import User
 from .models import Profile
 
 
@@ -13,7 +14,13 @@ async def get_or_create_profile(user_id: uuid.UUID, db: AsyncSession) -> Profile
     result = await db.execute(select(Profile).where(Profile.user_id == user_id))
     profile = result.scalar_one_or_none()
     if profile is None:
-        profile = Profile(user_id=user_id)
+        user_result = await db.execute(select(User).where(User.id == user_id))
+        user = user_result.scalar_one_or_none()
+        profile = Profile(
+            user_id=user_id,
+            full_name=user.name if user else None,
+            email=user.email if user else None,
+        )
         db.add(profile)
         await db.flush()
     return profile
