@@ -1,0 +1,105 @@
+name: Deploy — Build & Push to ECR, Deploy to EC2
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false   # never cancel a running deploy
+
+jobs:
+  build-and-push:
+    name: Build Docker image → ECR
+    runs-on: ubuntu-latest
+    outputs:
+      image: ${{ steps.build.outputs.image }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ secrets.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build, tag, and push image
+        id: build
+        env:
+          REGISTRY:   ${{ steps.login-ecr.outputs.registry }}
+          REPOSITORY: resume-builder-backend
+          SHA:        ${{ github.sha }}
+        run: |
+          IMAGE="$REGISTRY/$REPOSITORY:$SHA"
+          LATEST="$REGISTRY/$REPOSITORY:latest"
+          docker build -f backend/Dockerfile -t "$IMAGE" -t "$LATEST" .
+          docker push "$IMAGE"
+          docker push "$LATEST"
+          echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
+
+  deploy:
+    name: Deploy to EC2
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    environment: production
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host:     ${{ secrets.EC2_HOST }}
+          username: ubuntu
+          key:      ${{ secrets.EC2_SSH_KEY }}
+          timeout:  120s
+          script: |
+            set -e
+            cd /opt/resume-builder
+
+            # Pull latest compose files from repo
+            git pull origin main
+
+            # Write the new image tag so prod compose picks it up
+            echo "BACKEND_IMAGE=${{ needs.build-and-push.outputs.image }}" > .image.env
+
+            # Log in to ECR on the server
+            aws ecr get-login-password --region ${{ secrets.AWS_REGION }} \
+              | docker login --username AWS --password-stdin ${{ secrets.ECR_REGISTRY }}
+
+            # Pull & recreate only the backend (zero-downtime for DB)
+            docker compose \
+              -f docker-compose.yml \
+              -f docker-compose.prod.yml \
+              --env-file .env \
+              --env-file .image.env \
+              pull backend
+
+            docker compose \
+              -f docker-compose.yml \
+              -f docker-compose.prod.yml \
+              --env-file .env \
+              --env-file .image.env \
+              up -d --no-deps --remove-orphans backend
+
+            # Run migrations inside the new container
+            docker compose \
+              -f docker-compose.yml \
+              -f docker-compose.prod.yml \
+              --env-file .env \
+              --env-file .image.env \
+              exec -T backend alembic upgrade head
+
+            # Health check
+            sleep 5
+            curl --fail http://localhost:8000/health || exit 1
+
+            echo "✅ Deployment complete: ${{ needs.build-and-push.outputs.image }}"

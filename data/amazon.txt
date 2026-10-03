@@ -1,0 +1,39 @@
+Keploy
+SDE 1/ SDE 2
+Share
+Full-timePosted 3 days ago
+
+Location
+    Bangalore
+Stipend
+    ₹25 - ₹45 LPA
+Type
+    Full-time
+
+About this role
+
+Batch: 2020/2021/2022/2023/2024/2025. About the role:
+- Build and maintain systems that instrument application behavior at the kernel and runtime levels using eBPF and related technologies
+- Develop backend services and APIs that power developer tools and testing infrastructure
+- Design solutions that capture, analyze, and replay application interactions for debugging and testing purposes
+- Collaborate with product and infrastructure teams to ship features that solve real developer pain points
+
+What you'll work on:
+- Low-level systems programming touching kernel internals and observability mechanisms
+- Full-stack backend development spanning data collection, storage, and query layers
+- Performance optimization and debugging of complex distributed systems
+- Automated testing infrastructure and reliability improvements
+
+What we're looking for:
+- Hands-on experience with Linux kernel development or eBPF-based systems
+- Strong grasp of computer science fundamentals and software engineering principles
+- Proven track record in backend web development and API design
+- Solid programming ability across multiple languages and paradigms
+- Working knowledge of Object-Oriented Programming principles and design patterns
+- Sharp problem-solving skills and ability to think through systems analytically
+- Comfort working independently on well-defined tasks as well as collaborating closely with teammates
+- Clear written and verbal communication, especially in async and remote settings
+- Bachelor's or Master's degree in Computer Science or a closely related field
+
+Nice to have:
+- Familiarity with automated testing frameworks and test infrastructure

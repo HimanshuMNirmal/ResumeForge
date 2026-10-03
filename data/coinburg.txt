@@ -1,0 +1,74 @@
+Full Stack Engineer
+
+    $70k – $120k • 0.1% – 0.5%
+    |Remote (
+    Everywhere
+    )
+    |No experience required
+    |Full Time
+
+Reposted: 4 years ago
+Hires remotely in
+Everywhere
+Remote Work Policy
+
+Remote only
+Visa Sponsorship
+
+Available
+RelocationAllowed
+Skills
+Haskell
+Scala
+Full Stack Development
+Backend Development
+Frontend Development
+React.js
+Solidity
+Blockchain
+Smart Contracts
+About the job
+
+Full Stack Engineer @ Coinbag
+At Coinbag, engineers develop in every part of the code and we mean every part. We embrace technology and innovation. It is a critical skill for every engineer to be language & technology agnostic - meaning not only do you have the ability to pick up new languages and technologies quickly, but you are able to turn around and implement them with high quality, best practices. You don’t mind building mathematical models, creating smart contracts, pixel pushing on the marketing page or spinning up servers, and everything in between.
+
+We are a well-funded startup team and we are seeking individuals that want to bring innovation and make an impact. To take on this role, you will need to be ambitious, decisive, open minded and results driven.
+
+You will have the opportunity to work closely with our experienced co-founding team to execute on the roadmap as well as have a voice in what we decide to build going forward.
+
+If all that sounds good to you, check out below.
+
+Responsibilities
+
+    Develop solutions keeping in mind decentralization
+    Design infrastructure able to support a wide variety of situations while optimizing cost
+    Automate anything that can be automated, we ate manual work
+    Monitor and implement highest quality security standards
+
+Qualifications & minimum requirements
+We are looking for smart people that have experience writing software, no degree or papers required
+
+Our stack
+
+    Anything... and many things :)
+    Scala
+    NodeJs
+    Python
+    Solidity
+    Haskell
+    Blockchains: Terra, Cardano, Ethereum, Binance Smart Chain, Cosmos, Polkadot, Solana, and more)
+
+About Coinbag
+We are well-funded, blockchain-based company focused on automated cross-chain crypto interest optimization. Our mission is to make cryptocurrency investing simple for the every day investor. We work with our customers crypto portfolio to maximize interest earned on their holdings.
+
+Why Coinbag
+
+    Competitive salary
+    Company equity + access to pre-sale of token
+    Get paid in cryptocurrency
+    100% remote
+    Flexible work hours
+    Full-time, ongoing contract work so you can benefit from tax write-offs
+    Unlimited time off - though we will ensure minimums to make sure people take time!
+    Work with a team of experience blockchain experts
+

@@ -1,0 +1,36 @@
+# Environments & Secrets
+.env
+.env*.local
+.env.production
+.venv/
+env/
+venv/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+
+# User data & builds
+data/profile.json
+output/
+
+# Frontend (Next.js)
+resume-web/node_modules/
+resume-web/.next/
+resume-web/out/
+resume-web/build/
+.next/
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# System
+.DS_Store
+Thumbs.db
+
