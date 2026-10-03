@@ -21,6 +21,7 @@ export function ImportExportPanel() {
     onMutate: () => { setState("validating"); setErrors([]); },
     onSuccess: (r) => {
       qc.setQueryData(["profile"], r.profile);
+      qc.invalidateQueries({ queryKey: ["profile"] });
       setState("success"); setMessage(r.message);
       toast.success("Profile imported");
     },
