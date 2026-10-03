@@ -15,6 +15,9 @@ concurrency:
   group: deploy-production
   cancel-in-progress: false   # never cancel a running deploy
 
+permissions:
+  contents: read
+
 jobs:
   build-and-push:
     name: Build Docker image → ECR
@@ -80,8 +83,9 @@ jobs:
             set -e
             cd /opt/resume-builder
 
-            # Pull latest code
-            git pull origin main
+            # Pull latest code using GitHub Actions token for private repo authentication
+            git fetch "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" main
+            git reset --hard FETCH_HEAD
 
             # Write the new image tag so prod compose picks it up
             echo "BACKEND_IMAGE=${{ needs.build-and-push.outputs.image }}" > .image.env
