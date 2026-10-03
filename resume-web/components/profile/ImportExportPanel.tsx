@@ -27,8 +27,15 @@ export function ImportExportPanel() {
     },
     onError: (e) => {
       setState("error");
-      if (e instanceof ImportValidationError) { setErrors(e.errors); setMessage(e.message); setOpen(true); }
-      else setMessage(e.message);
+      if (e instanceof ImportValidationError) {
+        setErrors(e.errors);
+        setMessage(e.message);
+        setOpen(true);
+      } else {
+        setErrors([]);
+        setMessage(e.message);
+      }
+      toast.error(e.message);
     },
   });
 

@@ -16,7 +16,7 @@ export interface ImportResponse { message: string; profile: Profile }
 export interface ApiKey {
   id: string; provider: Provider; label: string; is_active: boolean; key_hint: string; created_at: string;
 }
-export interface NewApiKey { provider: Provider; api_key: string; label: string }
+export interface NewApiKey { provider: Provider; api_key: string; raw_key?: string; label: string }
 export interface ModelsResponse { providers: Partial<Record<Provider, string[]>>; platform_defaults: string[] }
 
 export interface GenerateRequest {

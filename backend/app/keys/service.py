@@ -110,6 +110,26 @@ async def activate_key(key_id: uuid.UUID, user_id: uuid.UUID, db: AsyncSession) 
     return key
 
 
+async def toggle_key(key_id: uuid.UUID, user_id: uuid.UUID, db: AsyncSession) -> ApiKey:
+    """Toggle a key active/inactive. If toggling on, deactivate any other active key."""
+    result = await db.execute(
+        select(ApiKey).where(ApiKey.id == key_id, ApiKey.user_id == user_id)
+    )
+    key = result.scalar_one_or_none()
+    if key is None:
+        raise ValueError("Key not found")
+
+    if key.is_active:
+        key.is_active = False
+    else:
+        await db.execute(
+            update(ApiKey).where(ApiKey.user_id == user_id).values(is_active=False)
+        )
+        key.is_active = True
+    await db.flush()
+    return key
+
+
 async def delete_key(key_id: uuid.UUID, user_id: uuid.UUID, db: AsyncSession) -> None:
     result = await db.execute(
         select(ApiKey).where(ApiKey.id == key_id, ApiKey.user_id == user_id)

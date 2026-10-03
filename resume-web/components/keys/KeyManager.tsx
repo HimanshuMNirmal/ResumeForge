@@ -6,6 +6,7 @@ import { Bot, Gem, Loader2, Lock, Plus, Sparkles, Trash2, X } from "lucide-react
 import { api } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 import type { Provider } from "@/types/api";
+import { ErrorAlert } from "@/components/ui/ErrorAlert";
 
 const PROVIDERS: Record<Provider, { name: string; icon: typeof Bot; pattern: RegExp; hint: string }> = {
   openai: { name: "OpenAI", icon: Sparkles, pattern: /^sk-[A-Za-z0-9_-]{20,}$/, hint: "Starts with sk-" },
@@ -37,6 +38,8 @@ function AddKeyModal({ onClose }: { onClose: () => void }) {
           <h2 id="add-key" className="font-medium">Add an API key</h2>
           <button type="button" aria-label="Close" onClick={onClose} className="text-zinc-400 hover:text-zinc-900"><X className="size-4" /></button>
         </div>
+
+        {add.isError && <ErrorAlert error={add.error} title="Failed to save API key" />}
         <div className="grid grid-cols-3 gap-2" role="radiogroup" aria-label="Provider">
           {(Object.keys(PROVIDERS) as Provider[]).map((p) => {
             const I = PROVIDERS[p].icon;

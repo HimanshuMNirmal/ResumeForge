@@ -6,6 +6,7 @@ import { Loader2, Plus, Trash2 } from "lucide-react";
 import { api, ApiError } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 import type { Experience, Profile, Skills } from "@/types/api";
+import { ErrorAlert } from "@/components/ui/ErrorAlert";
 
 const EMPTY: Profile = {
   full_name: "", email: "", phone: "", location: "", linkedin: "", github: "", portfolio: "",
@@ -116,6 +117,12 @@ export function ProfileForm() {
             className={cn("-mb-px border-b-2 px-3 py-2 text-sm", tab === t ? "border-zinc-900 font-medium" : "border-transparent text-zinc-500 hover:text-zinc-900")}>{t}</button>
         ))}
       </div>
+
+      {save.isError && (
+        <div className="p-4 pb-0">
+          <ErrorAlert error={save.error} title="Validation error saving profile" />
+        </div>
+      )}
 
       <div className="space-y-4 p-4">
         {tab === "Personal" && (

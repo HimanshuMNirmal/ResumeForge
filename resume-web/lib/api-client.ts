@@ -38,15 +38,26 @@ export const setTokenProvider = (fn: TokenProvider) => {
 };
 
 export class ApiError extends Error {
-  constructor(public status: number, message: string, public body?: unknown) {
+  public errors: string[];
+  public fieldErrors: Record<string, string>;
+
+  constructor(
+    public status: number,
+    message: string,
+    public body?: unknown,
+    errors: string[] = [],
+    fieldErrors: Record<string, string> = {}
+  ) {
     super(message);
     this.name = "ApiError";
+    this.errors = errors;
+    this.fieldErrors = fieldErrors;
   }
 }
 
 export class ImportValidationError extends ApiError {
-  constructor(message: string, public errors: string[]) {
-    super(422, message);
+  constructor(message: string, errors: string[], fieldErrors: Record<string, string> = {}) {
+    super(422, message, undefined, errors, fieldErrors);
     this.name = "ImportValidationError";
   }
 }
@@ -58,33 +69,80 @@ async function toError(res: Response): Promise<ApiError> {
   } catch {
     /* non-JSON body */
   }
-  if (res.status === 422) {
-    if (Array.isArray(body?.errors)) {
-      return new ImportValidationError(
-        typeof body?.detail === "string" ? body.detail : "Validation failed",
-        body.errors
-      );
-    }
-    if (Array.isArray(body?.detail?.errors)) {
-      return new ImportValidationError(
-        body?.detail?.message || "Validation failed",
-        body.detail.errors
-      );
-    }
-    if (Array.isArray(body?.detail)) {
-      return new ImportValidationError(
-        "Validation failed",
-        body.detail.map((d: any) => `${(d.loc ?? []).slice(1).join(".")}: ${d.msg}`)
-      );
+
+  const fieldErrors: Record<string, string> = {};
+  const errorList: string[] = [];
+
+  // 1. Extract from body.errors (array of strings or objects)
+  if (Array.isArray(body?.errors)) {
+    for (const item of body.errors) {
+      if (typeof item === "string") {
+        errorList.push(item);
+      } else if (item && typeof item === "object") {
+        const msg = item.msg || item.message || JSON.stringify(item);
+        const loc = Array.isArray(item.loc) ? item.loc.filter((x: any) => x !== "body").join(".") : "";
+        errorList.push(loc ? `${loc}: ${msg}` : msg);
+        if (loc) fieldErrors[loc] = msg;
+      }
     }
   }
-  const msg =
-    typeof body?.detail === "string"
-      ? body.detail
-      : typeof body?.detail?.message === "string"
-      ? body.detail.message
-      : res.statusText || "Request failed";
-  return new ApiError(res.status, msg, body);
+
+  // 2. Extract from body.detail.errors (e.g. custom validator with { message, errors: [...] })
+  if (Array.isArray(body?.detail?.errors)) {
+    for (const item of body.detail.errors) {
+      errorList.push(String(item));
+      const parts = String(item).split(":");
+      if (parts.length > 1) {
+        fieldErrors[parts[0].trim()] = parts.slice(1).join(":").trim();
+      }
+    }
+  }
+
+  // 3. Extract from FastAPI default 422 validation array (body.detail: [{loc: [...], msg: "..."}])
+  if (Array.isArray(body?.detail)) {
+    for (const d of body.detail) {
+      const locParts = Array.isArray(d.loc)
+        ? d.loc.filter((x: any) => x !== "body")
+        : [];
+      const field = locParts.join(".");
+      const msg = d.msg || "Invalid value";
+      const formatted = field ? `${field}: ${msg}` : msg;
+      errorList.push(formatted);
+      if (field) fieldErrors[field] = msg;
+    }
+  }
+
+  // 4. Extract base message
+  let mainMsg = "";
+  if (typeof body?.detail === "string") {
+    mainMsg = body.detail;
+  } else if (typeof body?.detail?.message === "string") {
+    mainMsg = body.detail.message;
+  } else if (typeof body?.message === "string") {
+    mainMsg = body.message;
+  }
+
+  // Build the unified human-readable message
+  let finalMessage = "";
+  if (mainMsg && errorList.length > 0) {
+    // If mainMsg already contains the error, don't duplicate
+    if (errorList.some((e) => mainMsg.includes(e))) {
+      finalMessage = mainMsg;
+    } else {
+      finalMessage = `${mainMsg} (${errorList.join("; ")})`;
+    }
+  } else if (errorList.length > 0) {
+    finalMessage = errorList.join("; ");
+  } else if (mainMsg) {
+    finalMessage = mainMsg;
+  } else {
+    finalMessage = res.statusText || "Request failed";
+  }
+
+  if (res.status === 422 || errorList.length > 0) {
+    return new ImportValidationError(finalMessage, errorList, fieldErrors);
+  }
+  return new ApiError(res.status, finalMessage, body, errorList, fieldErrors);
 }
 
 async function request(path: string, init: RequestInit = {}): Promise<Response> {
@@ -169,7 +227,13 @@ export const api = {
   keys: {
     list: () => json<ApiKey[]>("/api/v1/keys"),
     add: (k: NewApiKey) =>
-      json<ApiKey>("/api/v1/keys", { method: "POST", body: JSON.stringify(k) }),
+      json<ApiKey>("/api/v1/keys", {
+        method: "POST",
+        body: JSON.stringify({
+          ...k,
+          raw_key: k.api_key,
+        }),
+      }),
     remove: (id: string) => request(`/api/v1/keys/${id}`, { method: "DELETE" }),
     toggle: (id: string) => json<ApiKey>(`/api/v1/keys/${id}/toggle`, { method: "PATCH" }),
     models: () => json<ModelsResponse>("/api/v1/keys/models"),

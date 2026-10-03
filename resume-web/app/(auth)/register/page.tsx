@@ -6,13 +6,14 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/lib/auth-context";
+import { ErrorAlert } from "@/components/ui/ErrorAlert";
 
 function RegisterForm() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<any>(null);
 
   const { register } = useAuth();
   const router = useRouter();
@@ -35,9 +36,8 @@ function RegisterForm() {
       toast.success("Account created successfully!");
       router.push(redirectUrl);
     } catch (err: any) {
-      const msg = err.message || "Registration failed. Please try again.";
-      setError(msg);
-      toast.error(msg);
+      setError(err);
+      toast.error(err.message || "Registration failed. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -52,11 +52,7 @@ function RegisterForm() {
         </p>
       </div>
 
-      {error && (
-        <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-          {error}
-        </div>
-      )}
+      {error && <ErrorAlert error={error} title="Registration failed" />}
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>

@@ -8,7 +8,15 @@ from ..database import get_db
 from ..middleware.auth import get_current_user
 from ..auth.models import User
 from .schemas import AddKeyRequest, AvailableModelsOut, KeyOut
-from .service import AVAILABLE_MODELS, activate_key, add_key, delete_key, get_active_key, list_keys
+from .service import (
+    AVAILABLE_MODELS,
+    activate_key,
+    add_key,
+    delete_key,
+    get_active_key,
+    list_keys,
+    toggle_key,
+)
 import uuid
 
 router = APIRouter(prefix="/keys", tags=["keys"])
@@ -38,6 +46,19 @@ async def create_key(
         model_strong=body.model_strong,
         db=db,
     )
+    return KeyOut.model_validate(key)
+
+
+@router.patch("/{key_id}/toggle", response_model=KeyOut)
+async def toggle(
+    key_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        key = await toggle_key(key_id, current_user.id, db)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
     return KeyOut.model_validate(key)
 
 
