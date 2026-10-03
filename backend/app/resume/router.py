@@ -40,6 +40,8 @@ async def build_resume(
             jd_text=body.jd_text,
             make_pdf=body.use_pdf,
             db=db,
+            selected_key_id=body.selected_key_id,
+            model=body.model,
         ):
             yield f"data: {json.dumps(event)}\n\n"
 
@@ -65,17 +67,22 @@ async def generate_resume_endpoint(
     if not jd_text.strip():
         raise HTTPException(status_code=422, detail="Job description is required")
 
+    selected_key_id = body.get("selected_key_id")
+    model = body.get("model")
+
     events = []
     async for event in build_resume_stream(
         user=current_user,
         jd_text=jd_text,
         make_pdf=False,
         db=db,
+        selected_key_id=selected_key_id,
+        model=model,
     ):
         events.append(event)
         if event.get("event") == "error":
             raise HTTPException(
-                status_code=500,
+                status_code=400,
                 detail=event.get("data", {}).get("message", "Generation failed"),
             )
 

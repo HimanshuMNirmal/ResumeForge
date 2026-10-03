@@ -21,7 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..auth.models import User
 from ..config import get_settings
 from ..history.models import ResumeHistory
-from ..keys.service import decrypt_key, get_active_key
+from ..keys.service import decrypt_key, get_active_key, get_key_by_id
 from ..profile.service import get_or_create_profile
 from ..storage.s3 import upload_file
 
@@ -36,37 +36,52 @@ _executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="resume_build")
 
 # ── LLM client resolver ───────────────────────────────────────────────────────
 
-async def _resolve_llm_env(user: User, db: AsyncSession) -> tuple[dict[str, str], str | None, str | None]:
+async def _resolve_llm_env(
+    user: User,
+    db: AsyncSession,
+    selected_key_id: str | None = None,
+    requested_model: str | None = None,
+) -> tuple[dict[str, str], str | None, str | None]:
     """
     Returns (env_overrides, provider_used, model_used).
     env_overrides is a dict of env vars to temporarily set so the core engine
     picks up the right key — the engine reads from os.environ.
     """
+    # If the user explicitly chose no AI key (empty string or None):
+    if not selected_key_id or selected_key_id == "none":
+        return {}, None, None
+
     settings = get_settings()
-    active = await get_active_key(user.id, db)
+    active = None
+    try:
+        kid = uuid.UUID(str(selected_key_id))
+        active = await get_key_by_id(kid, user.id, db)
+    except Exception:
+        active = None
+
+    if not active:
+        active = await get_active_key(user.id, db)
 
     if active:
-        raw_key = decrypt_key(active)
-        key_env_map = {
-            "anthropic": "ANTHROPIC_API_KEY",
-            "openai": "OPENAI_API_KEY",
-            "gemini": "GEMINI_API_KEY",
-        }
-        env = {
-            key_env_map[active.provider]: raw_key,
-            "RESUME_PROVIDER": active.provider,
-        }
-        if active.model_fast:
-            env["RESUME_FAST_MODEL"] = active.model_fast
-        if active.model_strong:
-            env["RESUME_STRONG_MODEL"] = active.model_strong
-        return env, active.provider, active.model_strong or active.model_fast
-    
-    # Platform fallback
-    if settings.PLATFORM_ANTHROPIC_KEY:
-        return {"ANTHROPIC_API_KEY": settings.PLATFORM_ANTHROPIC_KEY, "RESUME_PROVIDER": "anthropic"}, "anthropic", None
-    if settings.PLATFORM_OPENAI_KEY:
-        return {"OPENAI_API_KEY": settings.PLATFORM_OPENAI_KEY, "RESUME_PROVIDER": "openai"}, "openai", None
+        try:
+            raw_key = decrypt_key(active)
+            key_env_map = {
+                "anthropic": "ANTHROPIC_API_KEY",
+                "openai": "OPENAI_API_KEY",
+                "gemini": "GEMINI_API_KEY",
+            }
+            env = {
+                key_env_map.get(active.provider, "OPENAI_API_KEY"): raw_key,
+                "RESUME_PROVIDER": active.provider,
+            }
+            model_to_use = requested_model or active.model_strong or active.model_fast
+            if model_to_use:
+                env["RESUME_FAST_MODEL"] = model_to_use
+                env["RESUME_STRONG_MODEL"] = model_to_use
+            return env, active.provider, model_to_use
+        except Exception:
+            # Corrupted key or encryption key mismatch - fallback gracefully to heuristic
+            return {}, None, None
 
     # No key — heuristic mode
     return {}, None, None
@@ -74,25 +89,66 @@ async def _resolve_llm_env(user: User, db: AsyncSession) -> tuple[dict[str, str]
 
 # ── Profile → profile.json ────────────────────────────────────────────────────
 
+def _normalize_skills(raw_skills) -> list[dict]:
+    skills_list: list[dict] = []
+    if isinstance(raw_skills, dict):
+        for category, items in raw_skills.items():
+            if isinstance(items, list):
+                for item in items:
+                    if isinstance(item, dict):
+                        skills_list.append(item)
+                    elif isinstance(item, str) and item.strip():
+                        skills_list.append({
+                            "name": item.strip(),
+                            "category": str(category).title(),
+                            "aliases": [],
+                            "years": None,
+                            "level": "working",
+                        })
+    elif isinstance(raw_skills, list):
+        for item in raw_skills:
+            if isinstance(item, dict):
+                skills_list.append(item)
+            elif isinstance(item, str) and item.strip():
+                skills_list.append({
+                    "name": item.strip(),
+                    "category": "Other",
+                    "aliases": [],
+                    "years": None,
+                    "level": "working",
+                })
+    return skills_list
+
+
+def _normalize_links(raw_links) -> list[dict]:
+    out: list[dict] = []
+    if isinstance(raw_links, list):
+        for item in raw_links:
+            if isinstance(item, dict) and "url" in item:
+                out.append({"label": item.get("label") or "Link", "url": item.get("url") or ""})
+            elif isinstance(item, str) and item.strip():
+                out.append({"label": "Link", "url": item.strip()})
+    return out
+
+
 def _profile_orm_to_dict(profile) -> dict:
     """Convert the ORM Profile model to the dict format the core engine expects."""
-    links = profile.links or []
     return {
         "basics": {
-            "name": profile.full_name or "",
+            "name": profile.full_name or "Resume Candidate",
             "email": profile.email or "",
             "phone": profile.phone or "",
             "location": profile.location or "",
-            "links": links,
+            "links": _normalize_links(profile.links),
         },
         "preferences": {
-            "career_stage": profile.career_stage,
-            "max_pages": profile.max_pages,
-            "date_format": profile.date_format,
-            "paper_size": profile.paper_size,
+            "career_stage": profile.career_stage or "experienced",
+            "max_pages": profile.max_pages or 1,
+            "date_format": profile.date_format or "MMM YYYY",
+            "paper_size": profile.paper_size or "Letter",
         },
         "summary_facts": profile.summary_facts or [],
-        "skills": profile.skills or [],
+        "skills": _normalize_skills(profile.skills),
         "experience": profile.experience or [],
         "projects": profile.projects or [],
         "education": profile.education or [],
@@ -165,6 +221,8 @@ async def build_resume_stream(
     jd_text: str,
     make_pdf: bool,
     db: AsyncSession,
+    selected_key_id: str | None = None,
+    model: str | None = None,
 ) -> AsyncGenerator[dict, None]:
     """
     AsyncGenerator that yields SSE-compatible dicts:
@@ -172,7 +230,9 @@ async def build_resume_stream(
     """
     import queue as _queue
 
-    env_overrides, provider_used, model_used = await _resolve_llm_env(user, db)
+    env_overrides, provider_used, model_used = await _resolve_llm_env(
+        user, db, selected_key_id=selected_key_id, requested_model=model
+    )
     profile_orm = await get_or_create_profile(user.id, db)
     profile_dict = _profile_orm_to_dict(profile_orm)
 
@@ -245,6 +305,16 @@ async def build_resume_stream(
         # Write history row
         import json as _json
         notes_json = _json.dumps(result.notes) if result.notes else None
+        score_val = None
+        if hasattr(result, "ats") and result.ats:
+            if callable(getattr(result.ats, "score", None)):
+                try:
+                    score_val = int(round(result.ats.score()))
+                except Exception:
+                    score_val = 85
+            elif isinstance(getattr(result.ats, "score", None), (int, float)):
+                score_val = int(round(result.ats.score))
+
         history_row = ResumeHistory(
             id=history_id,
             user_id=user.id,
@@ -253,7 +323,7 @@ async def build_resume_stream(
             jd_text=jd_text,
             s3_key_docx=s3_key_docx,
             s3_key_pdf=s3_key_pdf,
-            ats_score=result.ats.score if hasattr(result.ats, "score") else None,
+            ats_score=score_val,
             model_used=model_used,
             provider_used=provider_used,
             notes=notes_json,

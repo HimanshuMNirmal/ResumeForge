@@ -50,11 +50,14 @@ def _encrypt(plaintext: str) -> str:
 
 
 def _decrypt(token: str) -> str:
-    key = get_settings().encryption_key_bytes
-    aesgcm = AESGCM(key)
-    raw = base64.urlsafe_b64decode(token)
-    nonce, ct = raw[:12], raw[12:]
-    return aesgcm.decrypt(nonce, ct, None).decode()
+    try:
+        key = get_settings().encryption_key_bytes
+        aesgcm = AESGCM(key)
+        raw = base64.urlsafe_b64decode(token)
+        nonce, ct = raw[:12], raw[12:]
+        return aesgcm.decrypt(nonce, ct, None).decode()
+    except Exception as exc:
+        raise ValueError(f"Failed to decrypt key: {exc}") from exc
 
 
 # ── CRUD ──────────────────────────────────────────────────────────────────────
@@ -144,6 +147,13 @@ async def delete_key(key_id: uuid.UUID, user_id: uuid.UUID, db: AsyncSession) ->
 async def get_active_key(user_id: uuid.UUID, db: AsyncSession) -> ApiKey | None:
     result = await db.execute(
         select(ApiKey).where(ApiKey.user_id == user_id, ApiKey.is_active.is_(True))
+    )
+    return result.scalar_one_or_none()
+
+
+async def get_key_by_id(key_id: uuid.UUID, user_id: uuid.UUID, db: AsyncSession) -> ApiKey | None:
+    result = await db.execute(
+        select(ApiKey).where(ApiKey.id == key_id, ApiKey.user_id == user_id)
     )
     return result.scalar_one_or_none()
 

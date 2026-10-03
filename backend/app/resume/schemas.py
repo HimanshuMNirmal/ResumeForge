@@ -9,3 +9,5 @@ class BuildRequest(BaseModel):
     company: str | None = None
     title: str | None = None
     use_pdf: bool = True
+    selected_key_id: str | None = None
+    model: str | None = None

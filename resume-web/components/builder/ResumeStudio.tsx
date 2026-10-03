@@ -58,14 +58,20 @@ export function ResumeStudio() {
       setTab("Preview");
     },
   });
-  const canRun = jd.trim().length >= 80 && !gen.isPending;
+  const hasJd = jd.trim().length > 0;
 
-  const run = () => gen.mutate({
-    job_description: jd.trim(),
-    selected_key_id: keyId || null,
-    model: keyId ? chosenModel : "",
-    custom_instructions: [tone(toneV), focus(focusV), extra.trim()].filter(Boolean).join(" "),
-  });
+  const run = () => {
+    if (!hasJd) {
+      toast.error("Please paste a job description or target role first.");
+      return;
+    }
+    gen.mutate({
+      job_description: jd.trim(),
+      selected_key_id: keyId || null,
+      model: keyId ? chosenModel : "",
+      custom_instructions: [tone(toneV), focus(focusV), extra.trim()].filter(Boolean).join(" "),
+    });
+  };
   const copy = async () => { await navigator.clipboard.writeText(md); setCopied(true); setTimeout(() => setCopied(false), 1500); };
   const downloadMd = () => {
     const blob = new Blob([md], { type: "text/markdown;charset=utf-8" });
@@ -91,7 +97,7 @@ export function ResumeStudio() {
         <label className="block space-y-1">
           <span className="flex justify-between text-xs font-medium text-zinc-600">Job description <span className="font-normal text-zinc-400">{jd.length} chars</span></span>
           <textarea rows={10} className={field} value={jd} onChange={(e) => setJd(e.target.value)} placeholder="Paste the full job posting" />
-          {jd.length > 0 && jd.trim().length < 80 && <span className="text-xs text-zinc-500">Paste a bit more so keywords can be matched.</span>}
+          {jd.length > 0 && jd.trim().length < 80 && <span className="text-xs text-amber-600">Tip: 80+ chars recommended for full ATS keyword matching.</span>}
         </label>
         <label className="block space-y-1">
           <span className="text-xs font-medium text-zinc-600">AI Key</span>
@@ -125,9 +131,16 @@ export function ResumeStudio() {
           <span className="text-xs font-medium text-zinc-600">Extra instructions (optional)</span>
           <textarea rows={2} className={field} value={extra} onChange={(e) => setExtra(e.target.value)} placeholder="e.g. Keep it to one page" />
         </label>
-        <button disabled={!canRun} onClick={run} className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-zinc-900 px-3 py-2 text-sm text-white hover:bg-zinc-800 disabled:opacity-40">
-          {gen.isPending ? <Loader2 className="size-4 animate-spin" /> : <WandSparkles className="size-4" />}{gen.isPending ? "Generating…" : "Generate resume"}
-        </button>
+        <div className="space-y-1.5">
+          <button disabled={gen.isPending} onClick={run} className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-zinc-900 px-3 py-2 text-sm text-white hover:bg-zinc-800 disabled:opacity-40">
+            {gen.isPending ? <Loader2 className="size-4 animate-spin" /> : <WandSparkles className="size-4" />}{gen.isPending ? "Generating…" : "Generate resume"}
+          </button>
+          {!hasJd && (
+            <p className="text-center text-xs text-zinc-400">
+              Paste a job description above to generate
+            </p>
+          )}
+        </div>
       </section>
 
       <section className="min-h-[32rem] rounded-lg border border-zinc-200 bg-white">
