@@ -34,7 +34,7 @@ jobs:
         id: build
         env:
           REGISTRY:   ${{ steps.login-ecr.outputs.registry }}
-          REPOSITORY: resume-builder-backend
+          REPOSITORY: ${{ secrets.ECR_REPOSITORY || 'resumeforge-backend' }}
           SHA:        ${{ github.sha }}
         run: |
           IMAGE="$REGISTRY/$REPOSITORY:$SHA"
@@ -48,6 +48,7 @@ jobs:
     name: Deploy to EC2
     runs-on: ubuntu-latest
     needs: build-and-push
+    if: ${{ secrets.EC2_HOST != '' }}
     environment: production
 
     steps:
