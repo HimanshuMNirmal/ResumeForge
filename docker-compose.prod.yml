@@ -1,8 +1,3 @@
-version: "3.9"
-
-# Production overrides — usage:
-#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
-
 services:
   db:
     restart: always
@@ -13,7 +8,7 @@ services:
 
   backend:
     restart: always
-    image: ${BACKEND_IMAGE}   # ECR image tag set by CI/CD
+    image: ${BACKEND_IMAGE}
     # No volume mounts in production
     volumes: !reset []
     environment:

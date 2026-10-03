@@ -66,14 +66,16 @@ def create_app() -> FastAPI:
     # ── Global exception handlers ─────────────────────────────────────────────
     from fastapi.exceptions import RequestValidationError
     from fastapi import HTTPException
+    from starlette.exceptions import HTTPException as StarletteHTTPException
     from .errors import (
         http_exception_handler,
         unhandled_exception_handler,
         validation_exception_handler,
     )
 
-    app.add_exception_handler(RequestValidationError, validation_exception_handler)
+    app.add_exception_handler(StarletteHTTPException, http_exception_handler)
     app.add_exception_handler(HTTPException, http_exception_handler)
+    app.add_exception_handler(RequestValidationError, validation_exception_handler)
     app.add_exception_handler(Exception, unhandled_exception_handler)
 
     return app

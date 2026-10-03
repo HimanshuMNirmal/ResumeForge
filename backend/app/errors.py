@@ -2,12 +2,14 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 from typing import Any, Optional
 
 from fastapi import HTTPException, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 logger = logging.getLogger(__name__)
 
@@ -22,12 +24,16 @@ class ErrorPayload(BaseModel):
     message: str
     status: int
     details: list[ErrorDetail] = []
+    path: Optional[str] = None
+    timestamp: Optional[str] = None
 
 
 class ErrorResponse(BaseModel):
     success: bool = False
     error: ErrorPayload
     detail: Optional[str] = None
+    path: Optional[str] = None
+    timestamp: Optional[str] = None
 
 
 STATUS_CODE_MAP = {
@@ -35,9 +41,14 @@ STATUS_CODE_MAP = {
     status.HTTP_401_UNAUTHORIZED: "UNAUTHORIZED",
     status.HTTP_403_FORBIDDEN: "FORBIDDEN",
     status.HTTP_404_NOT_FOUND: "NOT_FOUND",
+    status.HTTP_405_METHOD_NOT_ALLOWED: "METHOD_NOT_ALLOWED",
     status.HTTP_409_CONFLICT: "CONFLICT",
     422: "VALIDATION_ERROR",
-    status.HTTP_500_INTERNAL_SERVER_ERROR: "INTERNAL_ERROR",
+    status.HTTP_429_TOO_MANY_REQUESTS: "TOO_MANY_REQUESTS",
+    status.HTTP_500_INTERNAL_SERVER_ERROR: "INTERNAL_SERVER_ERROR",
+    status.HTTP_502_BAD_GATEWAY: "BAD_GATEWAY",
+    status.HTTP_503_SERVICE_UNAVAILABLE: "SERVICE_UNAVAILABLE",
+    status.HTTP_504_GATEWAY_TIMEOUT: "GATEWAY_TIMEOUT",
 }
 
 
@@ -50,6 +61,9 @@ def build_error_response(
     request: Optional[Request] = None,
 ) -> JSONResponse:
     details_list = details or []
+    now_iso = datetime.now(timezone.utc).isoformat()
+    req_path = request.url.path if request else None
+
     content = {
         "success": False,
         "error": {
@@ -57,8 +71,12 @@ def build_error_response(
             "message": message,
             "status": status_code,
             "details": [d.model_dump() for d in details_list],
+            "path": req_path,
+            "timestamp": now_iso,
         },
         "detail": message,
+        "path": req_path,
+        "timestamp": now_iso,
     }
     resp_headers = headers.copy() if headers else {}
     if request:
@@ -68,7 +86,7 @@ def build_error_response(
             resp_headers["Access-Control-Allow-Credentials"] = "true"
             resp_headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, PATCH, DELETE, OPTIONS"
             resp_headers["Access-Control-Allow-Headers"] = "*"
-        else:
+        elif "Access-Control-Allow-Origin" not in resp_headers:
             resp_headers["Access-Control-Allow-Origin"] = "*"
     return JSONResponse(status_code=status_code, content=content, headers=resp_headers)
 
@@ -104,9 +122,9 @@ async def validation_exception_handler(
 
 
 async def http_exception_handler(
-    request: Request, exc: HTTPException
+    request: Request, exc: HTTPException | StarletteHTTPException
 ) -> JSONResponse:
-    """Standardize FastAPI HTTPExceptions."""
+    """Standardize FastAPI and Starlette HTTPExceptions (400, 401, 403, 404, etc.)."""
     code = STATUS_CODE_MAP.get(exc.status_code, "ERROR")
     details: list[ErrorDetail] = []
     message = ""
@@ -127,7 +145,10 @@ async def http_exception_handler(
         message = "; ".join(items)
         details = [ErrorDetail(message=x) for x in items]
     else:
-        message = str(exc.detail) if exc.detail else "Request failed"
+        if exc.status_code == 404 and exc.detail == "Not Found":
+            message = "Resource or endpoint not found"
+        else:
+            message = str(exc.detail) if exc.detail else "Request failed"
 
     headers = getattr(exc, "headers", None)
     return build_error_response(
@@ -147,7 +168,7 @@ async def unhandled_exception_handler(
     logger.exception("Unhandled server exception: %s %s", request.method, request.url)
     return build_error_response(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        code="INTERNAL_ERROR",
+        code="INTERNAL_SERVER_ERROR",
         message="An unexpected server error occurred. Please try again.",
         request=request,
     )

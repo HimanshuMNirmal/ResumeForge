@@ -235,6 +235,30 @@ async def get_resume_download_urls(
     if not row:
         raise HTTPException(status_code=404, detail="Resume record not found")
 
+    if not row.s3_key_pdf and row.s3_key_docx:
+        try:
+            import tempfile
+            from pathlib import Path
+            from ..storage.s3 import _client, upload_file
+            from ..config import get_settings
+            from resume_builder.render.pdf import docx_to_pdf
+
+            settings = get_settings()
+            cl = _client()
+            with tempfile.TemporaryDirectory() as td:
+                local_docx = Path(td) / "resume.docx"
+                local_pdf = Path(td) / "resume.pdf"
+                cl.download_file(settings.S3_BUCKET_NAME, row.s3_key_docx, str(local_docx))
+                if local_docx.exists():
+                    docx_to_pdf(local_docx, local_pdf)
+                    if local_pdf.exists():
+                        pdf_key = f"resumes/{row.user_id}/{row.id}/resume.pdf"
+                        upload_file(local_pdf, pdf_key)
+                        row.s3_key_pdf = pdf_key
+                        await db.commit()
+        except Exception:
+            pass
+
     return {
         "download_docx_url": _safe_presigned_url(row.s3_key_docx),
         "download_pdf_url": _safe_presigned_url(row.s3_key_pdf),

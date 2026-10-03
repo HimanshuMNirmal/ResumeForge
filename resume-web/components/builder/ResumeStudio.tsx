@@ -164,28 +164,24 @@ export function ResumeStudio() {
           {result && (
             <div className="ml-auto flex items-center gap-1.5 pb-1">
               <button onClick={copy} className="inline-flex items-center gap-1 rounded-md border border-zinc-200 px-2 py-1 text-xs hover:bg-zinc-50">{copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}{copied ? "Copied" : "Copy"}</button>
-              {(result.has_docx || result.download_docx_url || !result.has_pdf) && (
-                <button
-                  onClick={() => downloadFile("docx")}
-                  disabled={downloading === "docx"}
-                  className="inline-flex items-center gap-1 rounded-md border border-zinc-200 px-2 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
-                  title="Download DOCX file from S3"
-                >
-                  {downloading === "docx" ? <Loader2 className="size-3.5 animate-spin" /> : <FileDown className="size-3.5 text-blue-600" />}
-                  Download DOCX
-                </button>
-              )}
-              {(result.has_pdf || result.download_pdf_url) && (
-                <button
-                  onClick={() => downloadFile("pdf")}
-                  disabled={downloading === "pdf"}
-                  className="inline-flex items-center gap-1 rounded-md border border-zinc-200 px-2 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
-                  title="Download PDF file from S3"
-                >
-                  {downloading === "pdf" ? <Loader2 className="size-3.5 animate-spin" /> : <FileDown className="size-3.5 text-red-600" />}
-                  Download PDF
-                </button>
-              )}
+              <button
+                onClick={() => downloadFile("docx")}
+                disabled={downloading === "docx"}
+                className="inline-flex items-center gap-1 rounded-md border border-zinc-200 px-2.5 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
+                title="Download Word (.docx)"
+              >
+                {downloading === "docx" ? <Loader2 className="size-3.5 animate-spin" /> : <FileDown className="size-3.5 text-blue-600" />}
+                Download DOCX
+              </button>
+              <button
+                onClick={() => downloadFile("pdf")}
+                disabled={downloading === "pdf"}
+                className="inline-flex items-center gap-1 rounded-md border border-zinc-200 px-2.5 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
+                title="Download PDF document"
+              >
+                {downloading === "pdf" ? <Loader2 className="size-3.5 animate-spin" /> : <FileDown className="size-3.5 text-red-600" />}
+                Download PDF
+              </button>
             </div>
           )}
         </div>

@@ -104,36 +104,32 @@ export function HistoryList() {
               >
                 {score}% match
               </span>
-              {r.has_docx && (
-                <button
-                  onClick={() => downloadFile(r, "docx")}
-                  disabled={downloadingId === `${r.id}-docx`}
-                  className="inline-flex items-center gap-1 rounded-md border border-zinc-200 px-2 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
-                  title="Download DOCX"
-                >
-                  {downloadingId === `${r.id}-docx` ? (
-                    <Loader2 className="size-3.5 animate-spin" />
-                  ) : (
-                    <FileDown className="size-3.5 text-blue-600" />
-                  )}
-                  DOCX
-                </button>
-              )}
-              {r.has_pdf && (
-                <button
-                  onClick={() => downloadFile(r, "pdf")}
-                  disabled={downloadingId === `${r.id}-pdf`}
-                  className="inline-flex items-center gap-1 rounded-md border border-zinc-200 px-2 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
-                  title="Download PDF"
-                >
-                  {downloadingId === `${r.id}-pdf` ? (
-                    <Loader2 className="size-3.5 animate-spin" />
-                  ) : (
-                    <FileDown className="size-3.5 text-red-600" />
-                  )}
-                  PDF
-                </button>
-              )}
+              <button
+                onClick={() => downloadFile(r, "docx")}
+                disabled={downloadingId === `${r.id}-docx`}
+                className="inline-flex items-center gap-1 rounded-md border border-zinc-200 px-2.5 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
+                title="Download DOCX"
+              >
+                {downloadingId === `${r.id}-docx` ? (
+                  <Loader2 className="size-3.5 animate-spin" />
+                ) : (
+                  <FileDown className="size-3.5 text-blue-600" />
+                )}
+                DOCX
+              </button>
+              <button
+                onClick={() => downloadFile(r, "pdf")}
+                disabled={downloadingId === `${r.id}-pdf`}
+                className="inline-flex items-center gap-1 rounded-md border border-zinc-200 px-2.5 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
+                title="Download PDF"
+              >
+                {downloadingId === `${r.id}-pdf` ? (
+                  <Loader2 className="size-3.5 animate-spin" />
+                ) : (
+                  <FileDown className="size-3.5 text-red-600" />
+                )}
+                PDF
+              </button>
               <Link
                 href={`/builder?resume=${r.id}`}
                 className="inline-flex items-center gap-1 rounded-md border border-zinc-200 px-2.5 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50"
