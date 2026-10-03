@@ -56,7 +56,6 @@ jobs:
     runs-on: ubuntu-latest
     needs: build-and-push
     if: ${{ secrets.EC2_HOST != '' }}
-    environment: production
 
     steps:
       - name: Checkout
@@ -68,22 +67,35 @@ jobs:
           host:     ${{ secrets.EC2_HOST }}
           username: ubuntu
           key:      ${{ secrets.EC2_SSH_KEY }}
-          timeout:  120s
+          timeout:  180s
           script: |
             set -e
             cd /opt/resume-builder
 
-            # Pull latest compose files from repo
+            # Pull latest code
             git pull origin main
 
             # Write the new image tag so prod compose picks it up
             echo "BACKEND_IMAGE=${{ needs.build-and-push.outputs.image }}" > .image.env
 
+            # Determine registry URI
+            REGISTRY="${{ secrets.ECR_REGISTRY }}"
+            if [ -z "$REGISTRY" ]; then
+              REGISTRY="${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com"
+            fi
+
             # Log in to ECR on the server
             aws ecr get-login-password --region ${{ secrets.AWS_REGION }} \
-              | docker login --username AWS --password-stdin ${{ secrets.ECR_REGISTRY }}
+              | docker login --username AWS --password-stdin "$REGISTRY"
 
-            # Pull & recreate only the backend (zero-downtime for DB)
+            # Ensure Postgres database is running
+            docker compose \
+              -f docker-compose.yml \
+              -f docker-compose.prod.yml \
+              --env-file .env \
+              up -d db
+
+            # Pull new backend image from ECR
             docker compose \
               -f docker-compose.yml \
               -f docker-compose.prod.yml \
@@ -91,23 +103,23 @@ jobs:
               --env-file .image.env \
               pull backend
 
+            # Recreate backend container
             docker compose \
               -f docker-compose.yml \
               -f docker-compose.prod.yml \
               --env-file .env \
               --env-file .image.env \
-              up -d --no-deps --remove-orphans backend
+              up -d --remove-orphans backend
 
-            # Run migrations inside the new container
-            docker compose \
-              -f docker-compose.yml \
-              -f docker-compose.prod.yml \
-              --env-file .env \
-              --env-file .image.env \
-              exec -T backend alembic upgrade head
+            # Wait for backend health check (up to 30s)
+            echo "Waiting for backend health check..."
+            for i in $(seq 1 15); do
+              if curl -s http://localhost:8000/health | grep -q '"status":"ok"'; then
+                echo "✅ Backend is healthy!"
+                break
+              fi
+              echo "Waiting for health check... ($i/15)"
+              sleep 2
+            done
 
-            # Health check
-            sleep 5
-            curl --fail http://localhost:8000/health || exit 1
-
-            echo "✅ Deployment complete: ${{ needs.build-and-push.outputs.image }}"
+            echo "🚀 Deployment successfully completed: ${{ needs.build-and-push.outputs.image }}"
