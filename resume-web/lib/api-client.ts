@@ -60,7 +60,16 @@ async function toError(res: Response): Promise<ApiError> {
   }
   if (res.status === 422) {
     if (Array.isArray(body?.errors)) {
-      return new ImportValidationError(body.detail ?? "Validation failed", body.errors);
+      return new ImportValidationError(
+        typeof body?.detail === "string" ? body.detail : "Validation failed",
+        body.errors
+      );
+    }
+    if (Array.isArray(body?.detail?.errors)) {
+      return new ImportValidationError(
+        body?.detail?.message || "Validation failed",
+        body.detail.errors
+      );
     }
     if (Array.isArray(body?.detail)) {
       return new ImportValidationError(
@@ -69,7 +78,12 @@ async function toError(res: Response): Promise<ApiError> {
       );
     }
   }
-  const msg = typeof body?.detail === "string" ? body.detail : res.statusText || "Request failed";
+  const msg =
+    typeof body?.detail === "string"
+      ? body.detail
+      : typeof body?.detail?.message === "string"
+      ? body.detail.message
+      : res.statusText || "Request failed";
   return new ApiError(res.status, msg, body);
 }
 

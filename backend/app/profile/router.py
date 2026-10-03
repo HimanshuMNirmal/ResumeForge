@@ -338,8 +338,7 @@ async def download_sample_profile():
         headers={"Content-Disposition": 'attachment; filename="profile_sample.json"'},
     )
 
-
-@router.post("/import", response_model=ProfileOut, summary="Import profile from a JSON file")
+@router.post("/import", summary="Import profile from a JSON file")
 async def import_profile(
     file: UploadFile = File(..., description="A JSON file matching the profile schema"),
     current_user: User = Depends(get_current_user),
@@ -369,10 +368,10 @@ async def import_profile(
 
     is_valid, errors = validate_import_json(raw_dict)
     if not is_valid:
-        raise HTTPException(
+        return JSONResponse(
             status_code=422,
-            detail={
-                "message": f"Profile JSON has {len(errors)} validation error(s). Fix them and try again.",
+            content={
+                "detail": f"Profile JSON has {len(errors)} validation error(s). Fix them and try again.",
                 "errors": errors,
             },
         )
@@ -383,7 +382,7 @@ async def import_profile(
     prefs = raw_dict.get("preferences", {})
 
     # Apply basics directly
-    profile.full_name = basics.get("full_name") or profile.full_name
+    profile.full_name = basics.get("full_name") or basics.get("name") or profile.full_name
     profile.email = basics.get("email") or profile.email
     profile.phone = basics.get("phone") or profile.phone
     profile.location = basics.get("location") or profile.location
@@ -405,4 +404,7 @@ async def import_profile(
     profile.never_claim = raw_dict.get("never_claim", profile.never_claim)
 
     await db.flush()
-    return ProfileOut.model_validate(profile)
+    return {
+        "message": "Profile imported successfully",
+        "profile": _format_profile_for_frontend(profile),
+    }

@@ -161,9 +161,11 @@ def validate_import_json(raw: dict) -> tuple[bool, list[str]]:
     if not isinstance(basics, dict):
         errors.append("basics: must be an object")
     else:
-        for req in ("full_name", "email"):
-            if not basics.get(req):
-                errors.append(f"basics.{req}: required field is missing or empty")
+        name_val = basics.get("full_name") or basics.get("name")
+        if not name_val:
+            errors.append("basics.full_name: required field is missing or empty")
+        if not basics.get("email"):
+            errors.append("basics.email: required field is missing or empty")
         links = basics.get("links", [])
         errors += _validate_section("basics.links", links, LinkSchema)
 
