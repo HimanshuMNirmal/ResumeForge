@@ -12,7 +12,19 @@ import type {
   User,
 } from "@/types/api";
 
-const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+export function getBaseUrl(): string {
+  const envUrl = process.env.NEXT_PUBLIC_API_URL;
+  if (typeof window !== "undefined") {
+    // When running in browser on an HTTPS site (such as Vercel), avoid Mixed Content errors:
+    // If NEXT_PUBLIC_API_URL is an insecure http:// endpoint or empty, use relative path ""
+    // which delegates securely to Next.js API rewrites (same-origin HTTPS proxy).
+    if (window.location.protocol === "https:" && (!envUrl || envUrl.startsWith("http://"))) {
+      return "";
+    }
+  }
+  return envUrl ?? "http://localhost:8000";
+}
+
 const TOKEN_KEY = "resumeforge_token";
 
 export function getStoredToken(): string | null {
@@ -180,9 +192,10 @@ async function request(path: string, init: RequestInit = {}): Promise<Response> 
     headers.set("Content-Type", "application/json");
   }
 
+  const base = getBaseUrl();
   let res: Response;
   try {
-    res = await fetch(`${BASE}${path}`, {
+    res = await fetch(`${base}${path}`, {
       ...init,
       headers,
       credentials: "include", // send cookies for refresh token
@@ -200,7 +213,7 @@ async function request(path: string, init: RequestInit = {}): Promise<Response> 
     // Try to refresh token once if this is not already a refresh attempt
     if (path !== "/api/v1/auth/refresh") {
       try {
-        const refreshRes = await fetch(`${BASE}/api/v1/auth/refresh`, {
+        const refreshRes = await fetch(`${base}/api/v1/auth/refresh`, {
           method: "POST",
           credentials: "include",
         });
@@ -209,7 +222,7 @@ async function request(path: string, init: RequestInit = {}): Promise<Response> 
           if (refreshData?.access_token) {
             setStoredToken(refreshData.access_token);
             headers.set("Authorization", `Bearer ${refreshData.access_token}`);
-            const retryRes = await fetch(`${BASE}${path}`, {
+            const retryRes = await fetch(`${base}${path}`, {
               ...init,
               headers,
               credentials: "include",
