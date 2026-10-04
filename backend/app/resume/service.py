@@ -198,10 +198,10 @@ def _run_build_sync(
             profile_path=profile_path,
             jd_source=jd_text,
             out_root=tmp_dir,
-            make_pdf=make_pdf,
+            make_pdf=False,
         )
 
-        emit("Uploading resume…")
+        emit("Finalizing resume…")
         progress_queue.put(("result", result))
 
     except Exception as e:
@@ -381,18 +381,8 @@ async def build_resume_stream(
             yield {"event": "error", "data": {"message": "Build failed with no result"}}
             return
 
-        # Upload to S3
-        yield {"event": "progress", "data": "Uploading files to storage…"}
+        # Files are compiled lazily on-demand when the user clicks download
         s3_key_docx = s3_key_pdf = None
-        try:
-            if result.docx and result.docx.exists():
-                s3_key_docx = f"resumes/{user.id}/{history_id}/resume.docx"
-                upload_file(result.docx, s3_key_docx)
-            if result.pdf and result.pdf.exists():
-                s3_key_pdf = f"resumes/{user.id}/{history_id}/resume.pdf"
-                upload_file(result.pdf, s3_key_pdf)
-        except Exception as e:
-            yield {"event": "progress", "data": f"Warning: S3 upload failed — {e}"}
 
         # Write history row
         import json as _json

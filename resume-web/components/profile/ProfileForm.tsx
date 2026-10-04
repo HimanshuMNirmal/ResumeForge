@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Loader2, Plus, Trash2 } from "lucide-react";
+import { Loader2, Plus, Trash2, X } from "lucide-react";
 import { api, ApiError } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 import type { Experience, Profile, Skills } from "@/types/api";
@@ -13,8 +13,125 @@ const EMPTY: Profile = {
   skills: { languages: [], frameworks: [], tools: [], soft: [] },
 };
 const TABS = ["Personal", "Experience", "Education", "Skills"] as const;
-const csv = (s: string) => s.split(",").map((x) => x.trim()).filter(Boolean);
 const input = "w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm placeholder:text-zinc-400 focus:border-zinc-900 focus:outline-none";
+
+function TagInput({
+  tags,
+  onChange,
+  placeholder = "Type and press Enter or comma...",
+  compact = false,
+  error,
+}: {
+  tags: string[];
+  onChange: (tags: string[]) => void;
+  placeholder?: string;
+  compact?: boolean;
+  error?: string;
+}) {
+  const [inputVal, setInputVal] = useState("");
+
+  const addTag = (text: string) => {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    if (!tags.includes(trimmed)) {
+      onChange([...tags, trimmed]);
+    }
+    setInputVal("");
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter" || e.key === ",") {
+      e.preventDefault();
+      addTag(inputVal);
+    } else if (e.key === "Backspace" && !inputVal && tags.length > 0) {
+      e.preventDefault();
+      onChange(tags.slice(0, -1));
+    }
+  };
+
+  const handlePaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
+    const paste = e.clipboardData.getData("text");
+    if (paste.includes(",") || paste.includes("\n")) {
+      e.preventDefault();
+      const newItems = paste
+        .split(/[,\n]/)
+        .map((x) => x.trim())
+        .filter(Boolean);
+      const combined = Array.from(new Set([...tags, ...newItems]));
+      onChange(combined);
+      setInputVal("");
+    }
+  };
+
+  const handleBlur = () => {
+    if (inputVal.trim()) {
+      addTag(inputVal);
+    }
+  };
+
+  const removeTag = (indexToRemove: number) => {
+    onChange(tags.filter((_, i) => i !== indexToRemove));
+  };
+
+  return (
+    <div className="space-y-1">
+      <div
+        className={cn(
+          "flex min-h-[38px] flex-wrap items-center gap-1.5 rounded-md border border-zinc-300 bg-white p-1.5 focus-within:border-zinc-900",
+          compact && "min-h-[30px] p-1 text-xs",
+          error && "border-red-400"
+        )}
+      >
+        {tags.map((tag, idx) => (
+          <span
+            key={`${tag}-${idx}`}
+            className={cn(
+              "inline-flex items-center gap-1 rounded border border-zinc-200 bg-zinc-50 px-2 py-0.5 text-xs font-medium text-zinc-800",
+              compact && "px-1.5 py-0 text-[11px]"
+            )}
+          >
+            <span>{tag}</span>
+            <button
+              type="button"
+              onClick={() => removeTag(idx)}
+              className="text-zinc-400 hover:text-zinc-700 focus:outline-none"
+              aria-label={`Remove ${tag}`}
+            >
+              <X className={cn("size-3", compact && "size-2.5")} />
+            </button>
+          </span>
+        ))}
+        <input
+          type="text"
+          value={inputVal}
+          onChange={(e) => setInputVal(e.target.value)}
+          onKeyDown={handleKeyDown}
+          onPaste={handlePaste}
+          onBlur={handleBlur}
+          placeholder={tags.length === 0 ? placeholder : "Add more..."}
+          className={cn(
+            "min-w-[130px] flex-1 border-none bg-transparent px-1.5 py-0.5 text-sm text-zinc-900 placeholder:text-zinc-400 focus:outline-none",
+            compact && "min-w-[90px] text-xs"
+          )}
+        />
+        {inputVal.trim() && (
+          <button
+            type="button"
+            onClick={() => addTag(inputVal)}
+            className="rounded bg-zinc-100 px-2 py-0.5 text-xs font-medium text-zinc-700 hover:bg-zinc-200"
+          >
+            Add
+          </button>
+        )}
+      </div>
+      {!compact && (
+        <span className="text-[11px] text-zinc-400">
+          Press <kbd className="rounded border border-zinc-200 bg-zinc-50 px-1 font-mono text-[10px]">Enter</kbd> or <kbd className="rounded border border-zinc-200 bg-zinc-50 px-1 font-mono text-[10px]">,</kbd> to add. Spaces and special characters (e.g. C++, React Native) are supported.
+        </span>
+      )}
+    </div>
+  );
+}
 
 function Field({ label, error, children }: { label: string; error?: string; children: React.ReactNode }) {
   return (
@@ -157,9 +274,15 @@ export function ProfileForm() {
                   <div key={j} className="space-y-1.5 rounded-md bg-zinc-50 p-2">
                     <textarea aria-label={`Bullet ${j + 1}`} rows={2} className={input} placeholder="What you did and what changed because of it" value={b.text}
                       onChange={(e) => setExp(i, (ex) => { ex.bullets[j].text = e.target.value; })} />
-                    <div className="flex gap-2">
-                      <input aria-label="Skills for this bullet" className={cn(input, "py-1.5 text-xs")} placeholder="Skills, comma separated" value={b.skills.join(", ")}
-                        onChange={(e) => setExp(i, (ex) => { ex.bullets[j].skills = csv(e.target.value); })} />
+                    <div className="flex items-center gap-2">
+                      <div className="flex-1">
+                        <TagInput
+                          compact
+                          tags={b.skills}
+                          onChange={(tags) => setExp(i, (ex) => { ex.bullets[j].skills = tags; })}
+                          placeholder="Bullet skills (press Enter or comma)"
+                        />
+                      </div>
                       <button aria-label="Remove bullet" onClick={() => setExp(i, (ex) => { ex.bullets.splice(j, 1); })} className="text-zinc-400 hover:text-red-600"><Trash2 className="size-4" /></button>
                     </div>
                   </div>
@@ -188,8 +311,12 @@ export function ProfileForm() {
             ))}
             <button onClick={() => update((p) => { p.education.push({ institution: "", degree: "", field: "", start_date: "", end_date: null }); })}
               className="inline-flex items-center gap-1.5 rounded-md border border-zinc-200 px-3 py-1.5 text-sm hover:bg-zinc-50"><Plus className="size-4" />Add education</button>
-            <Field label="Certifications (comma separated)">
-              <input className={input} value={draft.certifications.join(", ")} onChange={(e) => update((p) => { p.certifications = csv(e.target.value); })} />
+            <Field label="Certifications">
+              <TagInput
+                tags={draft.certifications}
+                onChange={(tags) => update((p) => { p.certifications = tags; })}
+                placeholder="e.g. AWS Certified Solutions Architect, PMP..."
+              />
             </Field>
           </>
         )}
@@ -197,9 +324,12 @@ export function ProfileForm() {
         {tab === "Skills" && (
           <div className="grid gap-4 sm:grid-cols-2">
             {([["languages", "Languages"], ["frameworks", "Frameworks"], ["tools", "Tools"], ["soft", "Soft skills"]] as [keyof Skills, string][]).map(([k, label]) => (
-              <Field key={k} label={`${label} (comma separated)`}>
-                <input className={input} value={draft.skills[k].join(", ")} onChange={(e) => update((p) => { p.skills[k] = csv(e.target.value); })} />
-                <span className="mt-1.5 flex flex-wrap gap-1">{draft.skills[k].map((s) => <span key={s} className="rounded border border-zinc-200 bg-zinc-50 px-1.5 py-0.5 text-xs text-zinc-700">{s}</span>)}</span>
+              <Field key={k} label={label}>
+                <TagInput
+                  tags={draft.skills[k]}
+                  onChange={(tags) => update((p) => { p.skills[k] = tags; })}
+                  placeholder={`Add ${label.toLowerCase()}...`}
+                />
               </Field>
             ))}
           </div>

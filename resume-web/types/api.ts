@@ -43,6 +43,9 @@ export interface ResumeResult {
   has_pdf?: boolean;
   download_docx_url?: string | null;
   download_pdf_url?: string | null;
+  job_description?: string;
+  jd_text?: string;
+  notes?: string[] | string;
 }
 
 export interface HistoryItem {

@@ -321,12 +321,23 @@ export const api = {
   resume: {
     generate: (b: GenerateRequest) =>
       json<ResumeResult>("/api/v1/resume/generate", { method: "POST", body: JSON.stringify(b) }),
-    history: async (): Promise<HistoryItem[]> => {
-      const res = await json<HistoryListResponse | HistoryItem[]>("/api/v1/history");
-      if (Array.isArray(res)) return res;
-      return res.items || [];
+    history: async (params?: { limit?: number; offset?: number; q?: string; sort_by?: string }): Promise<HistoryListResponse> => {
+      const sp = new URLSearchParams();
+      if (params?.limit !== undefined) sp.set("limit", String(params.limit));
+      if (params?.offset !== undefined) sp.set("offset", String(params.offset));
+      if (params?.q) sp.set("q", params.q);
+      if (params?.sort_by) sp.set("sort_by", params.sort_by);
+      const query = sp.toString() ? `?${sp.toString()}` : "";
+      const res = await json<HistoryListResponse | HistoryItem[]>(`/api/v1/history${query}`);
+      if (Array.isArray(res)) {
+        return { items: res, total: res.length, limit: res.length, offset: 0 };
+      }
+      return res;
     },
+    delete: (id: string) => json<void>(`/api/v1/history/${id}`, { method: "DELETE" }),
     get: (id: string) => json<ResumeResult>(`/api/v1/resume/history/${id}`),
+    update: (id: string, b: Partial<{ markdown: string; job_description: string; jd_title: string; jd_company: string }>) =>
+      json<ResumeResult>(`/api/v1/resume/history/${id}`, { method: "PATCH", body: JSON.stringify(b) }),
     downloadUrls: (id: string) =>
       json<DownloadUrlsResponse>(`/api/v1/history/${id}/download-urls`),
   },

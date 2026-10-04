@@ -5,8 +5,10 @@ import json
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import StreamingResponse
+from pathlib import Path
+from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -20,6 +22,14 @@ from .service import build_resume_stream
 
 router = APIRouter(prefix="/resume", tags=["resume"])
 
+RESUME_CACHE_DIR = Path("/tmp/resumeforge_cache")
+
+
+def _get_local_cache_path(history_id: uuid.UUID, fmt: str) -> Path:
+    folder = RESUME_CACHE_DIR / str(history_id)
+    folder.mkdir(parents=True, exist_ok=True)
+    return folder / f"resume.{fmt}"
+
 
 def _safe_presigned_url(s3_key: str | None) -> str | None:
     if not s3_key:
@@ -28,6 +38,14 @@ def _safe_presigned_url(s3_key: str | None) -> str | None:
         return generate_presigned_url(s3_key)
     except Exception:
         return None
+
+
+def _safe_download_url(s3_key: str | None, history_id: uuid.UUID, fmt: str) -> str:
+    """Returns pre-signed S3 URL if available, otherwise direct backend download endpoint."""
+    presigned = _safe_presigned_url(s3_key)
+    if presigned:
+        return presigned
+    return f"/api/v1/resume/history/{history_id}/download/{fmt}"
 
 
 @router.post("/build")
@@ -48,7 +66,7 @@ async def build_resume(
         async for event in build_resume_stream(
             user=current_user,
             jd_text=body.jd_text,
-            make_pdf=body.use_pdf,
+            make_pdf=False,
             db=db,
             selected_key_id=body.selected_key_id,
             model=body.model,
@@ -79,7 +97,7 @@ async def generate_resume_endpoint(
 
     selected_key_id = body.get("selected_key_id")
     model = body.get("model")
-    make_pdf = body.get("make_pdf", True) if "make_pdf" in body else body.get("use_pdf", True)
+    make_pdf = False
 
     events = []
     async for event in build_resume_stream(
@@ -170,10 +188,10 @@ async def get_resume_history(
             "missing_keywords": [],
             "recommendations": [],
             "created_at": r.created_at.isoformat() if r.created_at else None,
-            "has_docx": bool(r.s3_key_docx),
-            "has_pdf": bool(r.s3_key_pdf),
-            "download_docx_url": _safe_presigned_url(r.s3_key_docx),
-            "download_pdf_url": _safe_presigned_url(r.s3_key_pdf),
+            "has_docx": True,
+            "has_pdf": True,
+            "download_docx_url": f"/api/v1/resume/history/{r.id}/download/docx",
+            "download_pdf_url": f"/api/v1/resume/history/{r.id}/download/pdf",
         }
         for r in rows
     ]
@@ -196,8 +214,36 @@ async def get_single_resume_history(
     if not row:
         raise HTTPException(status_code=404, detail="Resume record not found")
 
-    docx_url = _safe_presigned_url(row.s3_key_docx)
-    pdf_url = _safe_presigned_url(row.s3_key_pdf)
+    docx_url = _safe_download_url(row.s3_key_docx, row.id, "docx")
+    pdf_url = _safe_download_url(row.s3_key_pdf, row.id, "pdf")
+
+    parsed_notes = []
+    if row.notes:
+        try:
+            val = json.loads(row.notes)
+            if isinstance(val, list):
+                parsed_notes = [str(x) for x in val]
+            elif isinstance(val, str):
+                parsed_notes = [val]
+        except Exception:
+            parsed_notes = [row.notes]
+
+    matched_keywords = []
+    missing_keywords = []
+    if row.jd_text:
+        try:
+            from resume_builder.jd_parser import COMMON_TECH, COMMON_KEYWORDS
+            from resume_builder.textutil import term_in_text
+
+            md_text = row.markdown or ""
+            jd_terms = [t for t in COMMON_TECH + COMMON_KEYWORDS if term_in_text(t, row.jd_text)]
+            for t in jd_terms:
+                if term_in_text(t, md_text):
+                    matched_keywords.append(t)
+                else:
+                    missing_keywords.append(t)
+        except Exception:
+            pass
 
     return {
         "id": str(row.id),
@@ -205,11 +251,14 @@ async def get_single_resume_history(
         "job_title": row.jd_title or "",
         "jd_company": row.jd_company or "",
         "jd_title": row.jd_title or "",
+        "job_description": row.jd_text or "",
+        "jd_text": row.jd_text or "",
         "ats_score": row.ats_score or 0,
         "markdown": row.markdown or f"# Resume\n\nTailored for {row.jd_title or 'Role'} at {row.jd_company or 'Company'}",
-        "matched_keywords": [],
-        "missing_keywords": [],
+        "matched_keywords": matched_keywords,
+        "missing_keywords": missing_keywords,
         "recommendations": [],
+        "notes": parsed_notes,
         "created_at": row.created_at.isoformat() if row.created_at else None,
         "has_docx": bool(row.s3_key_docx),
         "has_pdf": bool(row.s3_key_pdf),
@@ -218,13 +267,51 @@ async def get_single_resume_history(
     }
 
 
-@router.get("/history/{history_id}/download-urls")
-async def get_resume_download_urls(
+def _recompile_and_upload_artifacts(
+    markdown_text: str,
+    user_id: uuid.UUID,
     history_id: uuid.UUID,
+    s3_key_docx: str | None,
+    s3_key_pdf: str | None,
+) -> tuple[str | None, str | None]:
+    """Compiles Markdown into DOCX and PDF, saving to local cache and uploading to S3."""
+    from ..storage.s3 import upload_file
+    from .markdown_renderer import compile_markdown_to_artifacts
+
+    docx_key = s3_key_docx or f"resumes/{user_id}/{history_id}/resume.docx"
+    pdf_key = s3_key_pdf or f"resumes/{user_id}/{history_id}/resume.pdf"
+
+    local_docx = _get_local_cache_path(history_id, "docx")
+    local_pdf = _get_local_cache_path(history_id, "pdf")
+
+    try:
+        compile_markdown_to_artifacts(markdown_text, local_docx, local_pdf)
+    except Exception:
+        return None, None
+
+    uploaded_docx = docx_key if local_docx.exists() else None
+    uploaded_pdf = pdf_key if local_pdf.exists() else None
+
+    # Optionally upload to S3 if configured
+    try:
+        if local_docx.exists():
+            upload_file(local_docx, docx_key)
+        if local_pdf.exists():
+            upload_file(local_pdf, pdf_key)
+    except Exception:
+        pass
+
+    return uploaded_docx, uploaded_pdf
+
+
+@router.patch("/history/{history_id}")
+async def update_resume_history(
+    history_id: uuid.UUID,
+    body: dict,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Re-generate fresh presigned download URLs for a resume history item."""
+    """Updates resume markdown or details for a history record, recompiling DOCX & PDF."""
     result = await db.execute(
         select(ResumeHistory).where(
             ResumeHistory.id == history_id,
@@ -235,33 +322,177 @@ async def get_resume_download_urls(
     if not row:
         raise HTTPException(status_code=404, detail="Resume record not found")
 
-    if not row.s3_key_pdf and row.s3_key_docx:
-        try:
-            import tempfile
-            from pathlib import Path
-            from ..storage.s3 import _client, upload_file
-            from ..config import get_settings
-            from resume_builder.render.pdf import docx_to_pdf
+    if "markdown" in body:
+        row.markdown = body["markdown"]
+        if row.markdown and row.markdown.strip():
+            import asyncio
+            docx_key, pdf_key = await asyncio.to_thread(
+                _recompile_and_upload_artifacts,
+                row.markdown,
+                current_user.id,
+                row.id,
+                row.s3_key_docx,
+                row.s3_key_pdf,
+            )
+            if docx_key:
+                row.s3_key_docx = docx_key
+            if pdf_key:
+                row.s3_key_pdf = pdf_key
 
-            settings = get_settings()
-            cl = _client()
-            with tempfile.TemporaryDirectory() as td:
-                local_docx = Path(td) / "resume.docx"
-                local_pdf = Path(td) / "resume.pdf"
-                cl.download_file(settings.S3_BUCKET_NAME, row.s3_key_docx, str(local_docx))
-                if local_docx.exists():
-                    docx_to_pdf(local_docx, local_pdf)
-                    if local_pdf.exists():
-                        pdf_key = f"resumes/{row.user_id}/{row.id}/resume.pdf"
-                        upload_file(local_pdf, pdf_key)
-                        row.s3_key_pdf = pdf_key
-                        await db.commit()
+    if "job_description" in body and body["job_description"]:
+        row.jd_text = body["job_description"]
+    if "jd_title" in body and body["jd_title"]:
+        row.jd_title = body["jd_title"]
+    if "jd_company" in body and body["jd_company"]:
+        row.jd_company = body["jd_company"]
+
+    # Re-analyze matched and missing keywords dynamically
+    matched_keywords = []
+    missing_keywords = []
+    if row.jd_text:
+        try:
+            from resume_builder.jd_parser import COMMON_TECH, COMMON_KEYWORDS
+            from resume_builder.textutil import term_in_text
+
+            md_text = row.markdown or ""
+            jd_terms = [t for t in COMMON_TECH + COMMON_KEYWORDS if term_in_text(t, row.jd_text)]
+            for t in jd_terms:
+                if term_in_text(t, md_text):
+                    matched_keywords.append(t)
+                else:
+                    missing_keywords.append(t)
+
+            total_kw = len(matched_keywords) + len(missing_keywords)
+            if total_kw > 0:
+                row.ats_score = int(round((len(matched_keywords) / total_kw) * 100))
         except Exception:
             pass
 
+    parsed_notes = []
+    if row.notes:
+        try:
+            val = json.loads(row.notes)
+            if isinstance(val, list):
+                parsed_notes = [str(x) for x in val]
+            elif isinstance(val, str):
+                parsed_notes = [val]
+        except Exception:
+            parsed_notes = [row.notes]
+
+    await db.commit()
+    await db.refresh(row)
+
+    docx_url = _safe_download_url(row.s3_key_docx, row.id, "docx")
+    pdf_url = _safe_download_url(row.s3_key_pdf, row.id, "pdf")
+
     return {
-        "download_docx_url": _safe_presigned_url(row.s3_key_docx),
-        "download_pdf_url": _safe_presigned_url(row.s3_key_pdf),
-        "has_docx": bool(row.s3_key_docx),
-        "has_pdf": bool(row.s3_key_pdf),
+        "id": str(row.id),
+        "company": row.jd_company or "",
+        "job_title": row.jd_title or "",
+        "jd_company": row.jd_company or "",
+        "jd_title": row.jd_title or "",
+        "job_description": row.jd_text or "",
+        "jd_text": row.jd_text or "",
+        "ats_score": row.ats_score or 0,
+        "markdown": row.markdown or "",
+        "matched_keywords": matched_keywords,
+        "missing_keywords": missing_keywords,
+        "recommendations": [],
+        "notes": parsed_notes,
+        "created_at": row.created_at.isoformat() if row.created_at else None,
+        "has_docx": bool(row.s3_key_docx) or _get_local_cache_path(row.id, "docx").exists(),
+        "has_pdf": bool(row.s3_key_pdf) or _get_local_cache_path(row.id, "pdf").exists(),
+        "download_docx_url": docx_url,
+        "download_pdf_url": pdf_url,
+    }
+
+
+@router.get("/history/{history_id}/download/{file_format}")
+async def download_resume_artifact(
+    history_id: uuid.UUID,
+    file_format: str,
+    token: str | None = Query(None),
+    auth: HTTPAuthorizationCredentials | None = Depends(HTTPBearer(auto_error=False)),
+    db: AsyncSession = Depends(get_db),
+):
+    """Directly serves or on-demand compiles the resume DOCX or PDF file."""
+    fmt = file_format.lower().lstrip(".")
+    if fmt not in ("docx", "pdf"):
+        raise HTTPException(status_code=400, detail="Invalid format. Must be docx or pdf")
+
+    from ..auth.service import decode_access_token, get_user_by_id
+    raw_token = (auth.credentials if auth else None) or token
+    if not raw_token:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    try:
+        user_id = uuid.UUID(decode_access_token(raw_token))
+        user = await get_user_by_id(user_id, db)
+        if not user:
+            raise HTTPException(status_code=401, detail="User not found")
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+    result = await db.execute(
+        select(ResumeHistory).where(
+            ResumeHistory.id == history_id,
+            ResumeHistory.user_id == user.id,
+        )
+    )
+    row = result.scalar_one_or_none()
+    if not row:
+        raise HTTPException(status_code=404, detail="Resume record not found")
+
+    target_file = _get_local_cache_path(row.id, fmt)
+    if not target_file.exists():
+        md_text = row.markdown or f"# {user.email}\n\nResume"
+        from .markdown_renderer import markdown_to_docx
+        docx_file = _get_local_cache_path(row.id, "docx")
+        if not docx_file.exists():
+            markdown_to_docx(md_text, docx_file)
+
+        if fmt == "pdf":
+            from resume_builder.render.pdf import docx_to_pdf
+            docx_to_pdf(docx_file, target_file)
+
+    if not target_file.exists():
+        raise HTTPException(status_code=500, detail=f"Failed to generate {fmt.upper()} file")
+
+    media_type = (
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        if fmt == "docx"
+        else "application/pdf"
+    )
+    filename = f"{(row.jd_title or 'resume').lower().replace(' ', '-')}.{fmt}"
+    return FileResponse(
+        str(target_file),
+        media_type=media_type,
+        filename=filename,
+    )
+
+
+@router.get("/history/{history_id}/download-urls")
+async def get_resume_download_urls(
+    history_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Returns download URLs for a resume history item, ensuring files are compiled."""
+    result = await db.execute(
+        select(ResumeHistory).where(
+            ResumeHistory.id == history_id,
+            ResumeHistory.user_id == current_user.id,
+        )
+    )
+    row = result.scalar_one_or_none()
+    if not row:
+        raise HTTPException(status_code=404, detail="Resume record not found")
+
+    docx_url = _safe_download_url(row.s3_key_docx, row.id, "docx")
+    pdf_url = _safe_download_url(row.s3_key_pdf, row.id, "pdf")
+
+    return {
+        "download_docx_url": docx_url,
+        "download_pdf_url": pdf_url,
+        "has_docx": True,
+        "has_pdf": True,
     }

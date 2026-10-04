@@ -58,7 +58,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const activeItem = NAV.find((item) => path.startsWith(item.href));
 
   return (
-    <div className="min-h-screen bg-zinc-50/50">
+    <div className="min-h-screen w-full max-w-full overflow-x-hidden bg-zinc-50/50">
       {/* ── Mobile Top Header (only on < md screens) ── */}
       <header className="sticky top-0 z-30 flex items-center justify-between border-b border-zinc-200 bg-white px-4 py-3 md:hidden">
         <Link href="/" className="flex items-center gap-2">
@@ -128,7 +128,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       )}
 
       {/* ── Main Container ── */}
-      <div className="mx-auto flex max-w-7xl gap-8 px-4 py-6 md:px-6">
+      <div className="mx-auto flex w-full max-w-7xl min-w-0 gap-8 px-4 py-6 md:px-6">
         {/* Desktop Sidebar (hidden on mobile) */}
         <nav
           aria-label="Sidebar"
@@ -180,7 +180,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </nav>
 
         {/* Page Content */}
-        <main className="min-w-0 flex-1">{children}</main>
+        <main className="min-w-0 max-w-full flex-1">{children}</main>
       </div>
     </div>
   );

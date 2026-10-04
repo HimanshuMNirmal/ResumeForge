@@ -26,9 +26,18 @@ def _safe_presigned_url(s3_key: str | None) -> str | None:
         return None
 
 
+def _safe_download_url(s3_key: str | None, history_id: uuid.UUID, fmt: str) -> str:
+    if s3_key:
+        try:
+            url = generate_presigned_url(s3_key)
+            if url:
+                return url
+        except Exception:
+            pass
+    return f"/api/v1/resume/history/{history_id}/download/{fmt}"
+
+
 def _to_item_out(row: ResumeHistory) -> HistoryItemOut:
-    docx_url = _safe_presigned_url(row.s3_key_docx)
-    pdf_url = _safe_presigned_url(row.s3_key_pdf)
     return HistoryItemOut(
         id=row.id,
         jd_title=row.jd_title,
@@ -36,33 +45,45 @@ def _to_item_out(row: ResumeHistory) -> HistoryItemOut:
         ats_score=row.ats_score,
         model_used=row.model_used,
         provider_used=row.provider_used,
-        has_docx=bool(row.s3_key_docx),
-        has_pdf=bool(row.s3_key_pdf),
-        download_docx_url=docx_url,
-        download_pdf_url=pdf_url,
+        has_docx=True,
+        has_pdf=True,
+        download_docx_url=f"/api/v1/resume/history/{row.id}/download/docx",
+        download_pdf_url=f"/api/v1/resume/history/{row.id}/download/pdf",
         created_at=row.created_at,
     )
 
 
 @router.get("", response_model=HistoryListOut)
 async def list_history(
-    limit: int = Query(default=20, ge=1, le=100),
+    limit: int = Query(default=10, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
+    q: Optional[str] = Query(default=None),
+    sort_by: str = Query(default="newest"),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    query = select(ResumeHistory).where(ResumeHistory.user_id == current_user.id)
+    if q and q.strip():
+        term = f"%{q.strip()}%"
+        query = query.where(
+            (ResumeHistory.jd_title.ilike(term)) | (ResumeHistory.jd_company.ilike(term))
+        )
+
     count_result = await db.execute(
-        select(func.count()).where(ResumeHistory.user_id == current_user.id)
+        select(func.count()).select_from(query.subquery())
     )
     total = count_result.scalar_one()
 
-    result = await db.execute(
-        select(ResumeHistory)
-        .where(ResumeHistory.user_id == current_user.id)
-        .order_by(ResumeHistory.created_at.desc())
-        .limit(limit)
-        .offset(offset)
-    )
+    if sort_by == "oldest":
+        query = query.order_by(ResumeHistory.created_at.asc())
+    elif sort_by == "score_desc":
+        query = query.order_by(ResumeHistory.ats_score.desc().nullslast(), ResumeHistory.created_at.desc())
+    elif sort_by == "score_asc":
+        query = query.order_by(ResumeHistory.ats_score.asc().nullslast(), ResumeHistory.created_at.desc())
+    else:
+        query = query.order_by(ResumeHistory.created_at.desc())
+
+    result = await db.execute(query.limit(limit).offset(offset))
     rows = result.scalars().all()
     return HistoryListOut(
         items=[_to_item_out(r) for r in rows],
@@ -98,7 +119,7 @@ async def get_download_urls(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Re-generate fresh presigned download URLs for a history item."""
+    """Returns fresh download URLs for a history item (downloads compiled on-demand)."""
     result = await db.execute(
         select(ResumeHistory).where(
             ResumeHistory.id == history_id,
@@ -109,35 +130,14 @@ async def get_download_urls(
     if not row:
         raise HTTPException(status_code=404, detail="History entry not found")
 
-    if not row.s3_key_pdf and row.s3_key_docx:
-        try:
-            import tempfile
-            from pathlib import Path
-            from ..storage.s3 import _client, upload_file
-            from ..config import get_settings
-            from resume_builder.render.pdf import docx_to_pdf
-
-            settings = get_settings()
-            cl = _client()
-            with tempfile.TemporaryDirectory() as td:
-                local_docx = Path(td) / "resume.docx"
-                local_pdf = Path(td) / "resume.pdf"
-                cl.download_file(settings.S3_BUCKET_NAME, row.s3_key_docx, str(local_docx))
-                if local_docx.exists():
-                    docx_to_pdf(local_docx, local_pdf)
-                    if local_pdf.exists():
-                        pdf_key = f"resumes/{row.user_id}/{row.id}/resume.pdf"
-                        upload_file(local_pdf, pdf_key)
-                        row.s3_key_pdf = pdf_key
-                        await db.commit()
-        except Exception:
-            pass
+    docx_url = _safe_download_url(row.s3_key_docx, row.id, "docx")
+    pdf_url = _safe_download_url(row.s3_key_pdf, row.id, "pdf")
 
     return {
-        "download_docx_url": _safe_presigned_url(row.s3_key_docx),
-        "download_pdf_url": _safe_presigned_url(row.s3_key_pdf),
-        "has_docx": bool(row.s3_key_docx),
-        "has_pdf": bool(row.s3_key_pdf),
+        "download_docx_url": docx_url,
+        "download_pdf_url": pdf_url,
+        "has_docx": True,
+        "has_pdf": True,
     }
 
 
@@ -157,9 +157,20 @@ async def delete_history_item(
     if not row:
         raise HTTPException(status_code=404, detail="History entry not found")
 
-    # Remove S3 objects
+    # Remove S3 objects if present
     keys_to_delete = [k for k in [row.s3_key_docx, row.s3_key_pdf] if k]
     if keys_to_delete:
-        delete_objects(keys_to_delete)
+        try:
+            delete_objects(keys_to_delete)
+        except Exception:
+            pass
+
+    # Clean local cache if present
+    import shutil
+    from pathlib import Path
+    cache_dir = Path("/tmp/resumeforge_cache") / str(row.id)
+    if cache_dir.exists():
+        shutil.rmtree(cache_dir, ignore_errors=True)
 
     await db.delete(row)
+    await db.commit()
