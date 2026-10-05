@@ -125,13 +125,21 @@ jobs:
 
             # Wait for backend health check (up to 30s)
             echo "Waiting for backend health check..."
+            HEALTHY=false
             for i in $(seq 1 15); do
               if curl -s http://localhost:8000/health | grep -q '"status":"ok"'; then
                 echo "✅ Backend is healthy!"
+                HEALTHY=true
                 break
               fi
               echo "Waiting for health check... ($i/15)"
               sleep 2
             done
+
+            if [ "$HEALTHY" != "true" ]; then
+              echo "❌ Backend health check failed! Fetching logs..."
+              docker logs resumeforge_backend --tail 100
+              exit 1
+            fi
 
             echo "🚀 Deployment successfully completed: ${{ needs.build-and-push.outputs.image }}"
