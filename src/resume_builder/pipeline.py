@@ -15,7 +15,7 @@ from .llm import (
 )
 from .matcher import Selection, display_skill, select
 from .models import JD, Profile, Resume, ResumeBullet, ResumeExperience, ResumeProject, SkillGroup
-from .render import PdfError, docx_to_pdf, page_count, render_docx
+from .render import PdfError, docx_to_pdf, page_count, render_docx, resume_to_markdown
 from .report import build_report
 from .textutil import SkillIndex, slugify, today
 from .validator import validate
@@ -180,6 +180,10 @@ def build(
     ats = check_file(docx, resume=resume, jd=jd, idx=SkillIndex(profile), max_pages=resume.max_pages, pdf_path=pdf)
 
     (folder / "resume.json").write_text(json.dumps(resume.model_dump(), indent=2, ensure_ascii=False), encoding="utf-8")
+    (folder / "resume.md").write_text(
+        resume_to_markdown(resume, target_title=jd.title, target_company=jd.company) + "\n",
+        encoding="utf-8",
+    )
     (folder / "jd.json").write_text(json.dumps(jd.model_dump(), indent=2, ensure_ascii=False), encoding="utf-8")
     (folder / "jd_raw.txt").write_text(jd_text, encoding="utf-8")
     (folder / "resume.txt").write_text(ats.text + "\n", encoding="utf-8")

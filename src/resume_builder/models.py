@@ -1,6 +1,7 @@
 """Pydantic models: Profile (source of truth), JD (parsed posting), Resume (renderer input)."""
 from __future__ import annotations
 
+import re
 from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
@@ -109,7 +110,7 @@ class Profile(BaseModel):
             parts += [e.degree, e.institution, *e.details]
         return "\n".join(parts)
 
-    def check_integrity(self) -> list[str]:
+    def check_integrity(self, auto_heal: bool = True) -> list[str]:
         """Non-schema sanity checks (duplicate ids, bullet skills missing from skill list...)."""
         problems: list[str] = []
         seen: set[str] = set()
@@ -123,14 +124,40 @@ class Profile(BaseModel):
                 if b.id in seen:
                     problems.append(f"duplicate bullet id: {b.id}")
                 seen.add(b.id)
+
+        def _norm(txt: str) -> str:
+            return re.sub(r"[^a-z0-9]", "", str(txt).lower())
+
         names = {s.name.lower() for s in self.skills}
+        norm_map = {_norm(s.name): s.name for s in self.skills}
         for s in self.skills:
-            names.update(a.lower() for a in s.aliases)
+            for a in s.aliases:
+                names.add(a.lower())
+                norm_map[_norm(a)] = s.name
+
         blocked = {n.lower() for n in self.never_claim}
         for bid, b in self.all_bullets().items():
-            for sk in b.skills:
-                if sk.lower() not in names:
+            for idx, sk in enumerate(b.skills):
+                sk_clean = str(sk).strip()
+                if not sk_clean:
+                    continue
+                sk_lower = sk_clean.lower()
+                sk_norm = _norm(sk_clean)
+                if sk_lower in names:
+                    continue
+                if sk_norm and sk_norm in norm_map:
+                    b.skills[idx] = norm_map[sk_norm]
+                    continue
+                if auto_heal:
+                    from .taxonomy import classify_skill
+                    new_skill = Skill(name=sk_clean, category=classify_skill(sk_clean))
+                    self.skills.append(new_skill)
+                    names.add(sk_lower)
+                    if sk_norm:
+                        norm_map[sk_norm] = sk_clean
+                else:
                     problems.append(f"bullet {bid}: skill '{sk}' is not in profile.skills")
+
         for s in self.skills:
             if s.name.lower() in blocked:
                 problems.append(f"skill '{s.name}' is also in never_claim")

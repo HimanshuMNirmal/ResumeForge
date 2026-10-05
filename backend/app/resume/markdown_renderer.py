@@ -84,9 +84,11 @@ def _add_formatted_runs(paragraph, text: str) -> None:
             r.italic = True
         elif full.startswith("[") and full.endswith(")"):
             label = m.group(5)
-            url = m.group(6)
-            if url.startswith(("http://", "https://", "mailto:")):
-                _add_hyperlink(paragraph, url, label)
+            url = m.group(6).strip()
+            from resume_builder.textutil import normalize_url
+            href = normalize_url(url)
+            if href.startswith(("http://", "https://", "mailto:")):
+                _add_hyperlink(paragraph, href, label)
             else:
                 paragraph.add_run(label)
         pos = end

@@ -120,3 +120,23 @@ def slugify(text: str, fallback: str = "unknown") -> str:
 
 def today() -> str:
     return date.today().isoformat()
+
+
+def normalize_url(url: str) -> str:
+    """Ensures external URL has a protocol (defaults to https://)."""
+    u = (url or "").strip()
+    if not u:
+        return ""
+    if re.match(r"^[a-zA-Z][a-zA-Z0-9+.-]*://", u) or u.startswith("mailto:") or u.startswith("tel:"):
+        return u
+    return f"https://{u}"
+
+
+def clean_display_url(url: str) -> str:
+    """Produces a clean, human-readable display string for resumes (e.g. github.com/user)."""
+    u = (url or "").strip()
+    if not u:
+        return ""
+    u = re.sub(r"^[a-zA-Z][a-zA-Z0-9+.-]*://", "", u)
+    u = re.sub(r"^www\.", "", u)
+    return u.rstrip("/")

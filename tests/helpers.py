@@ -7,7 +7,12 @@ from resume_builder.models import Profile
 
 ROOT = Path(__file__).resolve().parents[1]
 PROFILE_PATH = ROOT / "data" / "profile.example.json"
+if not PROFILE_PATH.exists() and (ROOT / "data" / "profile.json").exists():
+    PROFILE_PATH = ROOT / "data" / "profile.json"
+
 JD_PATH = ROOT / "data" / "sample_jd.txt"
+if not JD_PATH.exists() and (ROOT / "data" / "amazon.txt").exists():
+    JD_PATH = ROOT / "data" / "amazon.txt"
 
 
 def load_profile() -> Profile:

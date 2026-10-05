@@ -89,18 +89,28 @@ async def _resolve_llm_env(
 
 # ── Profile → profile.json ────────────────────────────────────────────────────
 
+import re
+
+
 def _normalize_skills(raw_skills) -> list[dict]:
+    from resume_builder.taxonomy import classify_skill
+
     skills_list: list[dict] = []
     if isinstance(raw_skills, dict):
         for category, items in raw_skills.items():
             if isinstance(items, list):
                 for item in items:
                     if isinstance(item, dict):
-                        skills_list.append(item)
+                        item_copy = dict(item)
+                        item_copy["category"] = classify_skill(
+                            item_copy.get("name", ""),
+                            existing_category=item_copy.get("category") or str(category),
+                        )
+                        skills_list.append(item_copy)
                     elif isinstance(item, str) and item.strip():
                         skills_list.append({
                             "name": item.strip(),
-                            "category": str(category).title(),
+                            "category": classify_skill(item.strip(), existing_category=str(category)),
                             "aliases": [],
                             "years": None,
                             "level": "working",
@@ -108,11 +118,16 @@ def _normalize_skills(raw_skills) -> list[dict]:
     elif isinstance(raw_skills, list):
         for item in raw_skills:
             if isinstance(item, dict):
-                skills_list.append(item)
+                item_copy = dict(item)
+                item_copy["category"] = classify_skill(
+                    item_copy.get("name", ""),
+                    existing_category=item_copy.get("category"),
+                )
+                skills_list.append(item_copy)
             elif isinstance(item, str) and item.strip():
                 skills_list.append({
                     "name": item.strip(),
-                    "category": "Other",
+                    "category": classify_skill(item.strip()),
                     "aliases": [],
                     "years": None,
                     "level": "working",
@@ -133,6 +148,44 @@ def _normalize_links(raw_links) -> list[dict]:
 
 def _profile_orm_to_dict(profile) -> dict:
     """Convert the ORM Profile model to the dict format the core engine expects."""
+    from resume_builder.taxonomy import classify_skill
+
+    skills = _normalize_skills(profile.skills)
+
+    def _norm(t: str) -> str:
+        return re.sub(r"[^a-z0-9]", "", str(t).lower())
+
+    existing_clean = {_norm(s["name"]) for s in skills if "name" in s}
+    for s in skills:
+        for a in s.get("aliases", []):
+            existing_clean.add(_norm(a))
+
+    # Auto-register any skills found in experience or project bullets
+    bullets_to_check = []
+    for exp in (profile.experience or []):
+        if isinstance(exp, dict):
+            bullets_to_check.extend(exp.get("bullets", []))
+    for proj in (profile.projects or []):
+        if isinstance(proj, dict):
+            bullets_to_check.extend(proj.get("bullets", []))
+
+    for b in bullets_to_check:
+        if isinstance(b, dict):
+            for sk in b.get("skills", []):
+                sk_str = str(sk).strip()
+                if not sk_str:
+                    continue
+                sk_clean = _norm(sk_str)
+                if sk_clean and sk_clean not in existing_clean:
+                    skills.append({
+                        "name": sk_str,
+                        "category": classify_skill(sk_str),
+                        "aliases": [],
+                        "years": None,
+                        "level": "working",
+                    })
+                    existing_clean.add(sk_clean)
+
     return {
         "basics": {
             "name": profile.full_name or "Resume Candidate",
@@ -148,7 +201,7 @@ def _profile_orm_to_dict(profile) -> dict:
             "paper_size": profile.paper_size or "Letter",
         },
         "summary_facts": profile.summary_facts or [],
-        "skills": _normalize_skills(profile.skills),
+        "skills": skills,
         "experience": profile.experience or [],
         "projects": profile.projects or [],
         "education": profile.education or [],
@@ -214,96 +267,8 @@ def _run_build_sync(
                 os.environ[k] = old_v
 
 
-def resume_to_markdown(resume, target_title: str | None = None, target_company: str | None = None) -> str:
-    """Format the generated Resume model into clean, professional Markdown for preview & export."""
-    lines = []
-    # Header
-    name = getattr(resume.basics, "name", "") or "Resume Candidate"
-    lines.append(f"# {name}\n")
+from resume_builder.render import resume_to_markdown
 
-    contacts = []
-    if getattr(resume.basics, "email", None):
-        contacts.append(resume.basics.email)
-    if getattr(resume.basics, "phone", None):
-        contacts.append(resume.basics.phone)
-    if getattr(resume.basics, "location", None):
-        contacts.append(resume.basics.location)
-    for link in getattr(resume.basics, "links", []):
-        url = getattr(link, "url", "") if hasattr(link, "url") else link.get("url", "")
-        label = getattr(link, "label", "") if hasattr(link, "label") else link.get("label", "Link")
-        if url:
-            contacts.append(f"[{label}]({url})")
-    if contacts:
-        lines.append(" | ".join(contacts))
-        lines.append("")
-
-    t_title = target_title.strip() if target_title else ""
-    t_comp = target_company.strip() if target_company and target_company.lower() != "none" else ""
-    if t_title and t_comp:
-        lines.append(f"**Target Role:** {t_title} · **Target Company:** {t_comp}\n")
-    elif t_title:
-        lines.append(f"**Target Role:** {t_title}\n")
-
-    # Summary
-    if getattr(resume, "summary", None):
-        lines.append("## Professional Summary")
-        lines.append(resume.summary.strip())
-        lines.append("")
-
-    # Skills
-    if getattr(resume, "skills", None):
-        lines.append("## Core Skills")
-        for group in resume.skills:
-            g_skills = getattr(group, "skills", [])
-            g_cat = getattr(group, "category", "Skills")
-            if g_skills:
-                lines.append(f"- **{g_cat}**: {', '.join(g_skills)}")
-        lines.append("")
-
-    # Experience
-    if getattr(resume, "experience", None):
-        lines.append("## Work Experience")
-        for exp in resume.experience:
-            dates = f"{exp.start} – {exp.end or 'Present'}"
-            loc = f" · {exp.location}" if exp.location else ""
-            lines.append(f"### {exp.title} | {exp.company}{loc}")
-            lines.append(f"*{dates}*\n")
-            for b in exp.bullets:
-                lines.append(f"- {b.text}")
-            lines.append("")
-
-    # Projects
-    if getattr(resume, "projects", None):
-        lines.append("## Key Projects")
-        for proj in resume.projects:
-            url_part = f" — [Project Link]({proj.url})" if proj.url else ""
-            lines.append(f"### {proj.name}{url_part}")
-            for b in proj.bullets:
-                lines.append(f"- {b.text}")
-            lines.append("")
-
-    # Education
-    if getattr(resume, "education", None):
-        lines.append("## Education")
-        for edu in resume.education:
-            dates = f"{edu.start} – {edu.end or 'Present'}" if edu.start or edu.end else ""
-            lines.append(f"### {edu.degree} · {edu.institution}")
-            if dates:
-                lines.append(f"*{dates}*\n")
-            for d in getattr(edu, "details", []):
-                lines.append(f"- {d}")
-            lines.append("")
-
-    # Certifications
-    if getattr(resume, "certifications", None):
-        lines.append("## Certifications")
-        for cert in resume.certifications:
-            issuer = f" ({cert.issuer})" if cert.issuer else ""
-            date_str = f" · {cert.date}" if cert.date else ""
-            lines.append(f"- **{cert.name}**{issuer}{date_str}")
-        lines.append("")
-
-    return "\n".join(lines).strip()
 
 
 # ── Async streaming build ─────────────────────────────────────────────────────

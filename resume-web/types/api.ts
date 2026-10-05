@@ -1,15 +1,32 @@
 export type Provider = "openai" | "anthropic" | "gemini";
 
-export interface Bullet { text: string; skills: string[] }
+export interface Bullet { id?: string; text: string; skills: string[] }
 export interface Experience {
-  company: string; role: string; start_date: string; end_date: string | null; bullets: Bullet[];
+  id?: string; company: string; role: string; start_date: string; end_date: string | null; bullets: Bullet[];
 }
 export interface Education { institution: string; degree: string; field: string; start_date: string; end_date: string | null }
-export interface Skills { languages: string[]; frameworks: string[]; tools: string[]; soft: string[] }
+export interface Skills {
+  languages: string[];
+  frontend: string[];
+  mobile: string[];
+  backend: string[];
+  databases: string[];
+  cloud_devops: string[];
+  tools: string[];
+  frameworks?: string[];
+  soft: string[];
+}
+export interface Project {
+  id?: string;
+  name: string;
+  url?: string;
+  skills?: string[];
+  bullets: Bullet[];
+}
 export interface Profile {
   full_name: string; email: string; phone: string; location: string;
   linkedin: string; github: string; portfolio: string;
-  experience: Experience[]; education: Education[]; certifications: string[]; skills: Skills;
+  experience: Experience[]; projects: Project[]; education: Education[]; certifications: string[]; skills: Skills;
 }
 export interface ImportResponse { message: string; profile: Profile }
 

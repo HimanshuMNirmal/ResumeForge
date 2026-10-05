@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import docx.opc.constants
 from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml import OxmlElement
@@ -10,7 +11,7 @@ from docx.oxml.ns import qn
 from docx.shared import Inches, Pt, RGBColor
 
 from ..models import Resume
-from ..textutil import date_range
+from ..textutil import clean_display_url, date_range, normalize_url
 
 # ---- style constants ("Plain Chronological v1")
 FONT = "Calibri"
@@ -53,6 +54,35 @@ def _bottom_border(paragraph) -> None:
         bottom.set(qn(k), v)
     bdr.append(bottom)
     ppr.append(bdr)
+
+
+def _add_hyperlink(paragraph, url: str, text: str, color: str = "004F9F", underline: bool = True) -> None:
+    """Adds a clickable external hyperlink to a python-docx paragraph."""
+    try:
+        part = paragraph.part
+        r_id = part.relate_to(url, docx.opc.constants.RELATIONSHIP_TYPE.HYPERLINK, is_external=True)
+        hyperlink = OxmlElement("w:hyperlink")
+        hyperlink.set(qn("r:id"), r_id)
+        new_run = OxmlElement("w:r")
+        rPr = OxmlElement("w:rPr")
+        if color:
+            c = OxmlElement("w:color")
+            c.set(qn("w:val"), color)
+            rPr.append(c)
+        if underline:
+            u = OxmlElement("w:u")
+            u.set(qn("w:val"), "single")
+            rPr.append(u)
+        new_run.append(rPr)
+        t = OxmlElement("w:t")
+        t.text = text
+        new_run.append(t)
+        hyperlink.append(new_run)
+        paragraph._p.append(hyperlink)
+    except Exception:
+        r = paragraph.add_run(text)
+        if underline:
+            r.underline = True
 
 
 def _round_bullets(doc) -> None:
@@ -150,8 +180,22 @@ def render_docx(resume: Resume, path: str | Path) -> Path:
     # header block lives in the document body (not the Word header) so every parser sees it
     b = resume.basics
     doc.add_paragraph(b.name, style="Title")
-    contact = [x for x in [b.location, b.phone, b.email, *[l.url for l in b.links]] if x]
-    doc.add_paragraph(" | ".join(contact))
+    p_contact = doc.add_paragraph()
+    first = True
+    for item in [b.location, b.phone, b.email]:
+        if item:
+            if not first:
+                p_contact.add_run(" | ")
+            p_contact.add_run(item)
+            first = False
+    for link in b.links:
+        if link.url:
+            if not first:
+                p_contact.add_run(" | ")
+            disp = clean_display_url(link.url)
+            href = normalize_url(link.url)
+            _add_hyperlink(p_contact, href, disp)
+            first = False
 
     def heading(name: str) -> None:
         _bottom_border(doc.add_paragraph(name, style="Heading 1"))
@@ -174,7 +218,18 @@ def render_docx(resume: Resume, path: str | Path) -> Path:
         elif name == "Projects" and resume.projects:
             heading(name)
             for pr in resume.projects:
-                _entry_line(doc, pr.name, [pr.url])
+                p = doc.add_paragraph()
+                p.paragraph_format.space_before = Pt(4)
+                p.paragraph_format.keep_with_next = True
+                p.add_run(pr.name).bold = True
+                if pr.url:
+                    import re
+                    raw_urls = [u.strip() for u in re.split(r"[,|]", pr.url) if u.strip()]
+                    for idx, u in enumerate(raw_urls):
+                        disp = clean_display_url(u)
+                        href = normalize_url(u)
+                        p.add_run(SEP if idx == 0 else " | ")
+                        _add_hyperlink(p, href, disp)
                 _bullets(doc, [x.text for x in pr.bullets])
         elif name == "Education" and resume.education:
             heading(name)

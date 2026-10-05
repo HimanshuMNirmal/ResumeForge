@@ -33,6 +33,7 @@ services:
       SECRET_KEY: ${SECRET_KEY}
       ENCRYPTION_KEY: ${ENCRYPTION_KEY}
       DEBUG: "true"
+      PYTHONPATH: /app/src
       ALLOWED_ORIGINS: '["http://localhost:3000","http://localhost:3001"]'
       AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
@@ -47,6 +48,7 @@ services:
       # Mount source for hot-reload in dev
       - ./src:/app/src:ro
       - ./backend/app:/app/app:ro
+      - ./backend/migrations:/app/migrations
     command: >
       sh -c "
         alembic upgrade head &&

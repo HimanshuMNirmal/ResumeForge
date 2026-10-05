@@ -5,14 +5,24 @@ import { toast } from "sonner";
 import { Loader2, Plus, Trash2, X } from "lucide-react";
 import { api, ApiError } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
-import type { Experience, Profile, Skills } from "@/types/api";
+import type { Experience, Profile, Project, Skills } from "@/types/api";
 
 const EMPTY: Profile = {
   full_name: "", email: "", phone: "", location: "", linkedin: "", github: "", portfolio: "",
-  experience: [], education: [], certifications: [],
-  skills: { languages: [], frameworks: [], tools: [], soft: [] },
+  experience: [], projects: [], education: [], certifications: [],
+  skills: {
+    languages: [],
+    frontend: [],
+    mobile: [],
+    backend: [],
+    databases: [],
+    cloud_devops: [],
+    tools: [],
+    frameworks: [],
+    soft: [],
+  },
 };
-const TABS = ["Personal", "Experience", "Education", "Skills"] as const;
+const TABS = ["Personal", "Experience", "Projects", "Education", "Skills"] as const;
 const input = "w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm placeholder:text-zinc-400 focus:border-zinc-900 focus:outline-none";
 
 function TagInput({
@@ -21,22 +31,40 @@ function TagInput({
   placeholder = "Type and press Enter or comma...",
   compact = false,
   error,
+  suggestions = [],
+  onNewTagCreated,
 }: {
   tags: string[];
   onChange: (tags: string[]) => void;
   placeholder?: string;
   compact?: boolean;
   error?: string;
+  suggestions?: string[];
+  onNewTagCreated?: (tag: string) => void;
 }) {
   const [inputVal, setInputVal] = useState("");
+  const [showSuggestions, setShowSuggestions] = useState(false);
+
+  const matchingSuggestions = useMemo(() => {
+    const query = inputVal.trim().toLowerCase();
+    if (!query || !suggestions.length) return [];
+    return suggestions
+      .filter((s) => s.toLowerCase().includes(query) && !tags.some((t) => t.toLowerCase() === s.toLowerCase()))
+      .slice(0, 8);
+  }, [inputVal, suggestions, tags]);
 
   const addTag = (text: string) => {
     const trimmed = text.trim();
     if (!trimmed) return;
-    if (!tags.includes(trimmed)) {
-      onChange([...tags, trimmed]);
+    const canonical = suggestions.find((s) => s.toLowerCase() === trimmed.toLowerCase()) || trimmed;
+    if (!tags.some((t) => t.toLowerCase() === canonical.toLowerCase())) {
+      onChange([...tags, canonical]);
+      if (!suggestions.some((s) => s.toLowerCase() === canonical.toLowerCase()) && onNewTagCreated) {
+        onNewTagCreated(canonical);
+      }
     }
     setInputVal("");
+    setShowSuggestions(false);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -46,6 +74,8 @@ function TagInput({
     } else if (e.key === "Backspace" && !inputVal && tags.length > 0) {
       e.preventDefault();
       onChange(tags.slice(0, -1));
+    } else if (e.key === "Escape") {
+      setShowSuggestions(false);
     }
   };
 
@@ -59,14 +89,22 @@ function TagInput({
         .filter(Boolean);
       const combined = Array.from(new Set([...tags, ...newItems]));
       onChange(combined);
+      for (const item of newItems) {
+        if (!suggestions.some((s) => s.toLowerCase() === item.toLowerCase()) && onNewTagCreated) {
+          onNewTagCreated(item);
+        }
+      }
       setInputVal("");
     }
   };
 
   const handleBlur = () => {
-    if (inputVal.trim()) {
-      addTag(inputVal);
-    }
+    setTimeout(() => {
+      setShowSuggestions(false);
+      if (inputVal.trim()) {
+        addTag(inputVal);
+      }
+    }, 150);
   };
 
   const removeTag = (indexToRemove: number) => {
@@ -74,7 +112,7 @@ function TagInput({
   };
 
   return (
-    <div className="space-y-1">
+    <div className="relative space-y-1">
       <div
         className={cn(
           "flex min-h-[38px] flex-wrap items-center gap-1.5 rounded-md border border-zinc-300 bg-white p-1.5 focus-within:border-zinc-900",
@@ -104,7 +142,11 @@ function TagInput({
         <input
           type="text"
           value={inputVal}
-          onChange={(e) => setInputVal(e.target.value)}
+          onChange={(e) => {
+            setInputVal(e.target.value);
+            setShowSuggestions(true);
+          }}
+          onFocus={() => setShowSuggestions(true)}
           onKeyDown={handleKeyDown}
           onPaste={handlePaste}
           onBlur={handleBlur}
@@ -124,6 +166,29 @@ function TagInput({
           </button>
         )}
       </div>
+
+      {showSuggestions && matchingSuggestions.length > 0 && (
+        <div className="absolute left-0 top-full z-50 mt-1 max-h-48 w-full min-w-[200px] overflow-auto rounded-md border border-zinc-200 bg-white p-1 shadow-lg">
+          <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
+            Suggestions from your skills
+          </div>
+          {matchingSuggestions.map((sug) => (
+            <button
+              key={sug}
+              type="button"
+              onMouseDown={(e) => {
+                e.preventDefault();
+                addTag(sug);
+              }}
+              className="flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-xs text-zinc-700 hover:bg-zinc-100"
+            >
+              <span>{sug}</span>
+              <span className="text-[10px] font-medium text-zinc-400">Select</span>
+            </button>
+          ))}
+        </div>
+      )}
+
       {!compact && (
         <span className="text-[11px] text-zinc-400">
           Press <kbd className="rounded border border-zinc-200 bg-zinc-50 px-1 font-mono text-[10px]">Enter</kbd> or <kbd className="rounded border border-zinc-200 bg-zinc-50 px-1 font-mono text-[10px]">,</kbd> to add. Spaces and special characters (e.g. C++, React Native) are supported.
@@ -158,12 +223,29 @@ function normalizeProfile(raw: any): Profile {
     portfolio: raw.portfolio || "",
     experience: Array.isArray(raw.experience)
       ? raw.experience.map((e: any) => ({
+          id: e?.id,
           company: e?.company || "",
           role: e?.role || "",
           start_date: e?.start_date || "",
           end_date: e?.end_date ?? null,
           bullets: Array.isArray(e?.bullets)
             ? e.bullets.map((b: any) => ({
+                id: b?.id,
+                text: typeof b === "string" ? b : (b?.text || ""),
+                skills: Array.isArray(b?.skills) ? b.skills : [],
+              }))
+            : [],
+        }))
+      : [],
+    projects: Array.isArray(raw.projects)
+      ? raw.projects.map((p: any) => ({
+          id: p?.id,
+          name: p?.name || "",
+          url: p?.url || "",
+          skills: Array.isArray(p?.skills) ? p.skills : [],
+          bullets: Array.isArray(p?.bullets)
+            ? p.bullets.map((b: any) => ({
+                id: b?.id,
                 text: typeof b === "string" ? b : (b?.text || ""),
                 skills: Array.isArray(b?.skills) ? b.skills : [],
               }))
@@ -182,8 +264,13 @@ function normalizeProfile(raw: any): Profile {
     certifications: Array.isArray(raw.certifications) ? raw.certifications : [],
     skills: {
       languages: Array.isArray(raw.skills?.languages) ? raw.skills.languages : [],
-      frameworks: Array.isArray(raw.skills?.frameworks) ? raw.skills.frameworks : [],
+      frontend: Array.isArray(raw.skills?.frontend) ? raw.skills.frontend : [],
+      mobile: Array.isArray(raw.skills?.mobile) ? raw.skills.mobile : [],
+      backend: Array.isArray(raw.skills?.backend) ? raw.skills.backend : [],
+      databases: Array.isArray(raw.skills?.databases) ? raw.skills.databases : [],
+      cloud_devops: Array.isArray(raw.skills?.cloud_devops) ? raw.skills.cloud_devops : [],
       tools: Array.isArray(raw.skills?.tools) ? raw.skills.tools : [],
+      frameworks: Array.isArray(raw.skills?.frameworks) ? raw.skills.frameworks : [],
       soft: Array.isArray(raw.skills?.soft) ? raw.skills.soft : [],
     },
   };
@@ -202,6 +289,26 @@ export function ProfileForm() {
   useEffect(() => { if (data) setDraft(normalizeProfile(data)); }, [data]);
 
   const dirty = useMemo(() => !!data && JSON.stringify(normalizeProfile(data)) !== JSON.stringify(draft), [data, draft]);
+
+  const allProfileSkills = useMemo(() => {
+    const list = [
+      ...(draft.skills.languages || []),
+      ...(draft.skills.frontend || []),
+      ...(draft.skills.mobile || []),
+      ...(draft.skills.backend || []),
+      ...(draft.skills.databases || []),
+      ...(draft.skills.cloud_devops || []),
+      ...(draft.skills.tools || []),
+      ...(draft.skills.frameworks || []),
+      ...(draft.skills.soft || []),
+      ...draft.projects.flatMap((p) => [
+        ...(p.skills || []),
+        ...p.bullets.flatMap((b) => b.skills || []),
+      ]),
+    ];
+    return Array.from(new Set(list.map((s) => s.trim()).filter(Boolean)));
+  }, [draft.skills, draft.projects]);
+
   useEffect(() => {
     if (!dirty) return;
     const h = (e: BeforeUnloadEvent) => e.preventDefault();
@@ -223,6 +330,7 @@ export function ProfileForm() {
 
   const update = (fn: (p: Profile) => void) => setDraft((p) => { const n = structuredClone(p); fn(n); return n; });
   const setExp = (i: number, fn: (e: Experience) => void) => update((p) => fn(p.experience[i]));
+  const setProj = (i: number, fn: (p: Project) => void) => update((prof) => fn(prof.projects[i]));
 
   if (isLoading) return <div className="h-64 animate-pulse rounded-lg border border-zinc-200 bg-white" aria-label="Loading profile" />;
   if (error) {
@@ -279,8 +387,26 @@ export function ProfileForm() {
                         <TagInput
                           compact
                           tags={b.skills}
+                          suggestions={allProfileSkills}
                           onChange={(tags) => setExp(i, (ex) => { ex.bullets[j].skills = tags; })}
-                          placeholder="Bullet skills (press Enter or comma)"
+                          onNewTagCreated={(tag) => {
+                            update((p) => {
+                              const already =
+                                (p.skills.languages || []).includes(tag) ||
+                                (p.skills.frontend || []).includes(tag) ||
+                                (p.skills.mobile || []).includes(tag) ||
+                                (p.skills.backend || []).includes(tag) ||
+                                (p.skills.databases || []).includes(tag) ||
+                                (p.skills.cloud_devops || []).includes(tag) ||
+                                (p.skills.tools || []).includes(tag) ||
+                                (p.skills.soft || []).includes(tag);
+                              if (!already) {
+                                if (!p.skills.tools) p.skills.tools = [];
+                                p.skills.tools.push(tag);
+                              }
+                            });
+                          }}
+                          placeholder="Bullet skills (press Enter or comma, or pick from suggestions)"
                         />
                       </div>
                       <button aria-label="Remove bullet" onClick={() => setExp(i, (ex) => { ex.bullets.splice(j, 1); })} className="text-zinc-400 hover:text-red-600"><Trash2 className="size-4" /></button>
@@ -292,6 +418,65 @@ export function ProfileForm() {
             ))}
             <button onClick={() => update((p) => { p.experience.push({ company: "", role: "", start_date: "", end_date: null, bullets: [{ text: "", skills: [] }] }); })}
               className="inline-flex items-center gap-1.5 rounded-md border border-zinc-200 px-3 py-1.5 text-sm hover:bg-zinc-50"><Plus className="size-4" />Add role</button>
+          </>
+        )}
+
+        {tab === "Projects" && (
+          <>
+            {draft.projects.length === 0 && (
+              <p className="rounded-md border border-dashed border-zinc-300 p-6 text-center text-sm text-zinc-500">
+                No projects yet. Add one to showcase your work and skills.
+              </p>
+            )}
+            {draft.projects.map((proj, i) => (
+              <fieldset key={i} className="space-y-3 rounded-md border border-zinc-200 p-3">
+                <div className="flex items-center justify-between">
+                  <legend className="text-sm font-medium">{proj.name || "New project"}</legend>
+                  <button aria-label="Remove project" onClick={() => update((p) => { p.projects.splice(i, 1); })} className="text-zinc-400 hover:text-red-600">
+                    <Trash2 className="size-4" />
+                  </button>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <Text label="Project Name" value={proj.name} onChange={(v) => setProj(i, (p) => { p.name = v; })} placeholder="e.g. TaskHive – Task Management Platform" />
+                  <Text label="Project / Repository URL" value={proj.url || ""} onChange={(v) => setProj(i, (p) => { p.url = v; })} placeholder="github.com/you/repo or live URL" />
+                </div>
+                <Field label="Key Technologies / Skills">
+                  <TagInput
+                    tags={proj.skills || []}
+                    suggestions={allProfileSkills}
+                    onChange={(tags) => setProj(i, (p) => { p.skills = tags; })}
+                    placeholder="Technologies used (e.g. React.js, Node.js, MongoDB)"
+                  />
+                </Field>
+                {proj.bullets.map((b, j) => (
+                  <div key={j} className="space-y-1.5 rounded-md bg-zinc-50 p-2">
+                    <textarea aria-label={`Project Bullet ${j + 1}`} rows={2} className={input} placeholder="What you built, impact, and metrics" value={b.text}
+                      onChange={(e) => setProj(i, (p) => { p.bullets[j].text = e.target.value; })} />
+                    <div className="flex items-center gap-2">
+                      <div className="flex-1">
+                        <TagInput
+                          compact
+                          tags={b.skills}
+                          suggestions={allProfileSkills}
+                          onChange={(tags) => setProj(i, (p) => { p.bullets[j].skills = tags; })}
+                          placeholder="Bullet skills (press Enter or comma, or pick from suggestions)"
+                        />
+                      </div>
+                      <button aria-label="Remove bullet" onClick={() => setProj(i, (p) => { p.bullets.splice(j, 1); })} className="text-zinc-400 hover:text-red-600">
+                        <Trash2 className="size-4" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+                <button onClick={() => setProj(i, (p) => { p.bullets.push({ text: "", skills: [] }); })} className="inline-flex items-center gap-1 text-xs text-zinc-600 hover:text-zinc-900">
+                  <Plus className="size-3.5" />Add bullet
+                </button>
+              </fieldset>
+            ))}
+            <button onClick={() => update((p) => { p.projects.push({ name: "", url: "", skills: [], bullets: [{ text: "", skills: [] }] }); })}
+              className="inline-flex items-center gap-1.5 rounded-md border border-zinc-200 px-3 py-1.5 text-sm hover:bg-zinc-50">
+              <Plus className="size-4" />Add project
+            </button>
           </>
         )}
 
@@ -323,10 +508,19 @@ export function ProfileForm() {
 
         {tab === "Skills" && (
           <div className="grid gap-4 sm:grid-cols-2">
-            {([["languages", "Languages"], ["frameworks", "Frameworks"], ["tools", "Tools"], ["soft", "Soft skills"]] as [keyof Skills, string][]).map(([k, label]) => (
+            {([
+              ["languages", "Languages"],
+              ["frontend", "Frontend"],
+              ["mobile", "Mobile"],
+              ["backend", "Backend & Architecture"],
+              ["databases", "Databases"],
+              ["cloud_devops", "Cloud & DevOps"],
+              ["tools", "Tools"],
+              ["soft", "Soft skills"],
+            ] as [keyof Skills, string][]).map(([k, label]) => (
               <Field key={k} label={label}>
                 <TagInput
-                  tags={draft.skills[k]}
+                  tags={draft.skills[k] || []}
                   onChange={(tags) => update((p) => { p.skills[k] = tags; })}
                   placeholder={`Add ${label.toLowerCase()}...`}
                 />

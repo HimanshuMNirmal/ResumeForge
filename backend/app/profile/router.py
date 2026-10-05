@@ -49,39 +49,76 @@ def _format_profile_for_frontend(profile: Profile) -> dict:
             elif "portfolio" in lbl:
                 portfolio = url
 
-    skills_dict = {"languages": [], "frameworks": [], "tools": [], "soft": []}
+    from resume_builder.taxonomy import classify_skill
+
+    skills_dict = {
+        "languages": [],
+        "frontend": [],
+        "mobile": [],
+        "backend": [],
+        "databases": [],
+        "cloud_devops": [],
+        "tools": [],
+        "frameworks": [],
+        "soft": [],
+    }
+
+    def _assign(sk_name: str, given_cat: str = ""):
+        name_clean = str(sk_name).strip()
+        if not name_clean:
+            return
+        cat = classify_skill(name_clean, existing_category=given_cat).lower()
+        if "language" in cat:
+            target = "languages"
+        elif "frontend" in cat:
+            target = "frontend"
+        elif "mobile" in cat:
+            target = "mobile"
+        elif "database" in cat:
+            target = "databases"
+        elif "cloud" in cat or "devops" in cat:
+            target = "cloud_devops"
+        elif "backend" in cat or "architecture" in cat or "ai" in cat or "blockchain" in cat:
+            target = "backend"
+        elif "soft" in cat:
+            target = "soft"
+        else:
+            target = "tools"
+        if name_clean not in skills_dict[target]:
+            skills_dict[target].append(name_clean)
+
     if isinstance(profile.skills, dict):
-        for k in skills_dict:
-            skills_dict[k] = profile.skills.get(k, [])
+        for k, items in profile.skills.items():
+            if isinstance(items, list):
+                for item in items:
+                    if isinstance(item, dict):
+                        _assign(item.get("name", ""), item.get("category", k))
+                    elif isinstance(item, str):
+                        _assign(item, "" if k in ("tools", "frameworks") else k)
     elif isinstance(profile.skills, list):
         for s in profile.skills:
             if isinstance(s, dict):
-                cat = (s.get("category") or "tools").lower()
-                name = s.get("name", "")
-                if "language" in cat:
-                    skills_dict["languages"].append(name)
-                elif "framework" in cat:
-                    skills_dict["frameworks"].append(name)
-                elif "soft" in cat:
-                    skills_dict["soft"].append(name)
-                else:
-                    skills_dict["tools"].append(name)
+                _assign(s.get("name", ""), s.get("category", ""))
+            elif isinstance(s, str):
+                _assign(s, "")
 
     experience = []
     if isinstance(profile.experience, list):
-        for exp in profile.experience:
+        for i, exp in enumerate(profile.experience):
             if isinstance(exp, dict):
                 experience.append({
+                    "id": exp.get("id") or f"exp-{i+1:03d}",
                     "company": exp.get("company", ""),
                     "role": exp.get("role") or exp.get("title", ""),
                     "start_date": exp.get("start_date") or exp.get("start", ""),
                     "end_date": exp.get("end_date") or exp.get("end", None),
                     "bullets": [
                         {
+                            "id": b.get("id") or f"b-{j+1:03d}",
                             "text": b.get("text", "") if isinstance(b, dict) else str(b),
                             "skills": b.get("skills", []) if isinstance(b, dict) else [],
                         }
-                        for b in exp.get("bullets", [])
+                        for j, b in enumerate(exp.get("bullets", []))
                     ],
                 })
 
@@ -105,6 +142,25 @@ def _format_profile_for_frontend(profile: Profile) -> dict:
             else:
                 certs.append(str(c))
 
+    projects = []
+    if isinstance(profile.projects, list):
+        for i, pr in enumerate(profile.projects):
+            if isinstance(pr, dict):
+                projects.append({
+                    "id": pr.get("id") or f"proj-{i+1:03d}",
+                    "name": pr.get("name", ""),
+                    "url": pr.get("url", ""),
+                    "skills": pr.get("skills", []) if isinstance(pr.get("skills"), list) else [],
+                    "bullets": [
+                        {
+                            "id": b.get("id") or f"b-proj-{j+1:03d}",
+                            "text": b.get("text", "") if isinstance(b, dict) else str(b),
+                            "skills": b.get("skills", []) if isinstance(b, dict) else [],
+                        }
+                        for j, b in enumerate(pr.get("bullets", []))
+                    ],
+                })
+
     return {
         "full_name": profile.full_name or "",
         "email": profile.email or "",
@@ -114,6 +170,7 @@ def _format_profile_for_frontend(profile: Profile) -> dict:
         "github": github,
         "portfolio": portfolio,
         "experience": experience,
+        "projects": projects,
         "education": education,
         "certifications": certs,
         "skills": skills_dict,
@@ -157,7 +214,51 @@ async def update_profile_full(
         profile.links = links
 
     if "skills" in body:
-        profile.skills = body["skills"]
+        new_skills = body["skills"]
+        # If user passed categorized dict, auto-enroll any skills found on experience bullets
+        if isinstance(new_skills, dict):
+            from resume_builder.taxonomy import classify_skill
+
+            all_known = set()
+            for cat, items in new_skills.items():
+                if isinstance(items, list):
+                    all_known.update(str(x).strip().lower() for x in items)
+
+            bullets_to_scan = []
+            if "experience" in body and isinstance(body["experience"], list):
+                for exp in body["experience"]:
+                    if isinstance(exp, dict):
+                        bullets_to_scan.extend(exp.get("bullets", []))
+            if "projects" in body and isinstance(body["projects"], list):
+                for pr in body["projects"]:
+                    if isinstance(pr, dict):
+                        bullets_to_scan.extend(pr.get("bullets", []))
+
+            for b in bullets_to_scan:
+                if isinstance(b, dict):
+                    for sk in b.get("skills", []):
+                        sk_str = str(sk).strip()
+                        if sk_str and sk_str.lower() not in all_known:
+                            cat_raw = classify_skill(sk_str).lower()
+                            if "database" in cat_raw:
+                                target_k = "databases"
+                            elif "frontend" in cat_raw:
+                                target_k = "frontend"
+                            elif "mobile" in cat_raw:
+                                target_k = "mobile"
+                            elif "backend" in cat_raw or "architecture" in cat_raw or "ai" in cat_raw or "blockchain" in cat_raw:
+                                target_k = "backend"
+                            elif "cloud" in cat_raw or "devops" in cat_raw:
+                                target_k = "cloud_devops"
+                            elif "language" in cat_raw:
+                                target_k = "languages"
+                            elif "soft" in cat_raw:
+                                target_k = "soft"
+                            else:
+                                target_k = "tools"
+                            new_skills.setdefault(target_k, []).append(sk_str)
+                            all_known.add(sk_str.lower())
+        profile.skills = new_skills
 
     if "experience" in body and isinstance(body["experience"], list):
         exp_list = []
@@ -183,6 +284,28 @@ async def update_profile_full(
                     ],
                 })
         profile.experience = exp_list
+
+    if "projects" in body and isinstance(body["projects"], list):
+        proj_list = []
+        for i, pr in enumerate(body["projects"]):
+            if isinstance(pr, dict):
+                proj_list.append({
+                    "id": pr.get("id") or f"proj-{i+1:03d}",
+                    "name": pr.get("name", ""),
+                    "url": pr.get("url", ""),
+                    "skills": pr.get("skills", []) if isinstance(pr.get("skills"), list) else [],
+                    "bullets": [
+                        {
+                            "id": b.get("id") or f"b-proj-{j+1:03d}",
+                            "text": b.get("text", "") if isinstance(b, dict) else str(b),
+                            "skills": b.get("skills", []) if isinstance(b, dict) else [],
+                            "metrics": b.get("metrics", []) if isinstance(b, dict) else [],
+                            "themes": b.get("themes", []) if isinstance(b, dict) else [],
+                        }
+                        for j, b in enumerate(pr.get("bullets", []))
+                    ],
+                })
+        profile.projects = proj_list
 
     if "education" in body and isinstance(body["education"], list):
         ed_list = []
